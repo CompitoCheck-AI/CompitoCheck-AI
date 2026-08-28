@@ -1389,6 +1389,10 @@
     setTimeout(()=>els.studentName.focus(),30);
   });
 
+  $('cancelStudentBtn').addEventListener('click', () => {
+  els.studentDialog.close();
+  });
+
   els.studentForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = els.studentName.value.trim();
