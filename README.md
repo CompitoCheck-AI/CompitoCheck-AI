@@ -1,4 +1,4 @@
-# CompitoCheck AI — V3.1
+# CompitoCheck AI — V3.2
 
 Webapp statica bilingue Italiano/English pensata come supporto alla correzione scolastica.
 
@@ -111,3 +111,29 @@ La scrittura corsiva può richiedere correzioni manuali dopo il riconoscimento.
 ## Correzione V3.1
 Corretto anche il pulsante **Annulla** nella finestra “Nuovo studente”.
 Ora la finestra può essere chiusa senza attivare la validazione del campo obbligatorio.
+
+
+## Novità V3.2 — Fotocamera reale
+Il pulsante **Scatta foto** non usa più semplicemente un selettore file.
+
+Ora:
+1. apre una finestra con l'anteprima della fotocamera;
+2. preferisce la fotocamera posteriore (`facingMode: environment`);
+3. mostra il pulsante **Scatta**;
+4. visualizza l'anteprima della foto;
+5. permette **Riprova** oppure **Usa questa foto**;
+6. dopo la conferma avvia automaticamente l'OCR;
+7. inserisce il testo riconosciuto nel campo corretto.
+
+Il pulsante **Scegli immagine** resta come fallback se:
+- il dispositivo non ha fotocamera;
+- il browser non supporta `getUserMedia`;
+- l'utente nega il permesso;
+- si preferisce usare una foto già esistente.
+
+### Requisito
+La fotocamera diretta del browser richiede un contesto sicuro:
+- HTTPS (GitHub Pages va bene), oppure
+- localhost durante lo sviluppo.
+
+Aprendo il file HTML direttamente da disco (`file://`) la fotocamera può non essere disponibile.

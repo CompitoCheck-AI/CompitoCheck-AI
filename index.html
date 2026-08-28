@@ -53,10 +53,8 @@
             <span>📄 Carica file</span>
           </label>
 
-          <label class="file-label camera-label">
-            <input id="referencePhotoInput" type="file" accept="image/*" capture="environment" />
-            <span>📷 Scatta foto</span>
-          </label>
+          <button id="referenceCameraBtn" type="button" class="file-label camera-label camera-button">📷 Scatta foto</button>
+          <input id="referencePhotoInput" class="hidden-file-input" type="file" accept="image/*" />
 
           <span id="referenceFileName" class="muted small">Nessun file caricato</span>
         </div>
@@ -161,10 +159,8 @@
             <span>📄 Carica file</span>
           </label>
 
-          <label class="file-label camera-label">
-            <input id="essayPhotoInput" type="file" accept="image/*" capture="environment" />
-            <span>📷 Scatta foto</span>
-          </label>
+          <button id="essayCameraBtn" type="button" class="file-label camera-label camera-button">📷 Scatta foto</button>
+          <input id="essayPhotoInput" class="hidden-file-input" type="file" accept="image/*" />
 
           <span id="fileName" class="muted small">Nessun file caricato</span>
         </div>
@@ -390,6 +386,34 @@
     </section>
   </main>
 
+
+
+  <dialog id="cameraDialog" class="camera-dialog">
+    <div class="camera-dialog-content">
+      <div class="section-head">
+        <div>
+          <h3>Scatta foto del compito</h3>
+          <p class="muted small">Inquadra il foglio frontalmente e con buona illuminazione.</p>
+        </div>
+        <button id="closeCameraBtn" type="button" class="btn ghost">Chiudi</button>
+      </div>
+
+      <div id="cameraMessage" class="ocr-status muted small" aria-live="polite"></div>
+
+      <div class="camera-stage">
+        <video id="cameraVideo" playsinline autoplay muted></video>
+        <canvas id="cameraCanvas" hidden></canvas>
+        <img id="cameraPreview" alt="Anteprima della foto scattata" hidden />
+      </div>
+
+      <div class="camera-actions">
+        <button id="capturePhotoBtn" type="button" class="btn primary">Scatta</button>
+        <button id="retakePhotoBtn" type="button" class="btn" hidden>Riprova</button>
+        <button id="usePhotoBtn" type="button" class="btn primary" hidden>Usa questa foto</button>
+        <button id="fallbackPhotoBtn" type="button" class="btn ghost">Scegli immagine</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="studentDialog">
     <form method="dialog" id="studentForm">

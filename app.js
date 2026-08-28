@@ -14,6 +14,7 @@
     studentInfo: $('studentInfo'),
     referenceText: $('referenceText'),
     referenceFileInput: $('referenceFileInput'),
+    referenceCameraBtn: $('referenceCameraBtn'),
     referencePhotoInput: $('referencePhotoInput'),
     referenceFileName: $('referenceFileName'),
     referenceOcrStatus: $('referenceOcrStatus'),
@@ -23,6 +24,7 @@
     referenceCount: $('referenceCount'),
     languageSelect: $('languageSelect'),
     fileInput: $('fileInput'),
+    essayCameraBtn: $('essayCameraBtn'),
     essayPhotoInput: $('essayPhotoInput'),
     fileName: $('fileName'),
     essayOcrStatus: $('essayOcrStatus'),
@@ -52,6 +54,16 @@
     confirmStudentBtn: $('confirmStudentBtn'),
     referencesDialog: $('referencesDialog'),
     referencesList: $('referencesList'),
+    cameraDialog: $('cameraDialog'),
+    cameraVideo: $('cameraVideo'),
+    cameraCanvas: $('cameraCanvas'),
+    cameraPreview: $('cameraPreview'),
+    cameraMessage: $('cameraMessage'),
+    capturePhotoBtn: $('capturePhotoBtn'),
+    retakePhotoBtn: $('retakePhotoBtn'),
+    usePhotoBtn: $('usePhotoBtn'),
+    fallbackPhotoBtn: $('fallbackPhotoBtn'),
+    closeCameraBtn: $('closeCameraBtn'),
     closeReferencesBtn: $('closeReferencesBtn'),
     installBtn: $('installBtn'),
     classroomToggle: $('classroomToggle'),
@@ -134,6 +146,13 @@
     lastInputAt: null,
     lastValue: '',
     pasteGuard: false
+  };
+
+
+  let cameraState = {
+    stream: null,
+    target: null,       // 'essay' | 'reference'
+    capturedBlob: null
   };
 
   function loadJson(key, fallback) {
@@ -679,6 +698,172 @@
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
   }
+
+
+  function stopCameraStream() {
+    if (cameraState.stream) {
+      cameraState.stream.getTracks().forEach(track => track.stop());
+      cameraState.stream = null;
+    }
+    if (els.cameraVideo) els.cameraVideo.srcObject = null;
+  }
+
+  function resetCameraUi() {
+    cameraState.capturedBlob = null;
+    els.cameraPreview.hidden = true;
+    els.cameraPreview.removeAttribute('src');
+    els.cameraVideo.hidden = false;
+    els.capturePhotoBtn.hidden = false;
+    els.retakePhotoBtn.hidden = true;
+    els.usePhotoBtn.hidden = true;
+    setOcrStatus(els.cameraMessage, '');
+  }
+
+  async function openCamera(target) {
+    cameraState.target = target;
+    resetCameraUi();
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setOcrStatus(
+        els.cameraMessage,
+        'La fotocamera diretta non è supportata da questo browser. Usa “Scegli immagine”.',
+        'error'
+      );
+      els.capturePhotoBtn.hidden = true;
+      els.cameraDialog.showModal();
+      return;
+    }
+
+    els.cameraDialog.showModal();
+    setOcrStatus(els.cameraMessage, 'Apertura fotocamera...', 'working');
+
+    try {
+      stopCameraStream();
+
+      // Preferisce la fotocamera posteriore; se non disponibile il browser sceglie quella utilizzabile.
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      cameraState.stream = stream;
+      els.cameraVideo.srcObject = stream;
+
+      await new Promise(resolve => {
+        if (els.cameraVideo.readyState >= 2) return resolve();
+        els.cameraVideo.onloadedmetadata = () => resolve();
+      });
+
+      try { await els.cameraVideo.play(); } catch {}
+      setOcrStatus(els.cameraMessage, 'Fotocamera pronta.', 'success');
+    } catch (err) {
+      console.error('Camera error:', err);
+      stopCameraStream();
+      els.capturePhotoBtn.hidden = true;
+
+      let msg = 'Non riesco ad aprire la fotocamera.';
+      if (err?.name === 'NotAllowedError') {
+        msg = 'Permesso fotocamera negato. Consenti l’accesso alla fotocamera nelle impostazioni del browser oppure usa “Scegli immagine”.';
+      } else if (err?.name === 'NotFoundError') {
+        msg = 'Nessuna fotocamera disponibile su questo dispositivo. Usa “Scegli immagine”.';
+      } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+        msg = 'La fotocamera diretta richiede HTTPS. Pubblica l’app su GitHub Pages oppure usa “Scegli immagine”.';
+      }
+      setOcrStatus(els.cameraMessage, msg, 'error');
+    }
+  }
+
+  function captureCameraFrame() {
+    const video = els.cameraVideo;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setOcrStatus(els.cameraMessage, 'La fotocamera non è ancora pronta.', 'error');
+      return;
+    }
+
+    const canvas = els.cameraCanvas;
+    const maxWidth = 2200;
+    const scale = Math.min(1, maxWidth / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+
+    const ctx = canvas.getContext('2d', { alpha:false });
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(blob => {
+      if (!blob) {
+        setOcrStatus(els.cameraMessage, 'Impossibile acquisire la foto.', 'error');
+        return;
+      }
+
+      cameraState.capturedBlob = blob;
+      const url = URL.createObjectURL(blob);
+      const old = els.cameraPreview.dataset.objectUrl;
+      if (old) URL.revokeObjectURL(old);
+
+      els.cameraPreview.dataset.objectUrl = url;
+      els.cameraPreview.src = url;
+      els.cameraPreview.hidden = false;
+      els.cameraVideo.hidden = true;
+      els.capturePhotoBtn.hidden = true;
+      els.retakePhotoBtn.hidden = false;
+      els.usePhotoBtn.hidden = false;
+      setOcrStatus(els.cameraMessage, 'Foto scattata. Controllala prima di usarla.', 'success');
+    }, 'image/jpeg', 0.92);
+  }
+
+  async function retakeCameraPhoto() {
+    cameraState.capturedBlob = null;
+    els.cameraPreview.hidden = true;
+    els.cameraVideo.hidden = false;
+    els.capturePhotoBtn.hidden = false;
+    els.retakePhotoBtn.hidden = true;
+    els.usePhotoBtn.hidden = true;
+    setOcrStatus(els.cameraMessage, 'Inquadra nuovamente il foglio.', 'working');
+
+    if (!cameraState.stream) {
+      await openCamera(cameraState.target);
+    }
+  }
+
+  async function useCapturedPhoto() {
+    const blob = cameraState.capturedBlob;
+    if (!blob) return;
+
+    const target = cameraState.target;
+    const targetEl = target === 'reference' ? els.referenceText : els.essayText;
+    const statusEl = target === 'reference' ? els.referenceOcrStatus : els.essayOcrStatus;
+    const lang = target === 'reference' ? 'ita+eng' : ocrLanguageForEssay();
+
+    stopCameraStream();
+    els.cameraDialog.close();
+
+    await recognizePhoto(blob, targetEl, statusEl, lang);
+  }
+
+  function closeCameraDialog() {
+    stopCameraStream();
+    if (els.cameraPreview.dataset.objectUrl) {
+      URL.revokeObjectURL(els.cameraPreview.dataset.objectUrl);
+      delete els.cameraPreview.dataset.objectUrl;
+    }
+    cameraState.capturedBlob = null;
+    try { els.cameraDialog.close(); } catch {}
+  }
+
+  function openFallbackImagePicker() {
+    const input = cameraState.target === 'reference'
+      ? els.referencePhotoInput
+      : els.essayPhotoInput;
+
+    closeCameraDialog();
+    input?.click();
+  }
+
 
   async function extractDocumentText(file) {
     if (!file) return '';
@@ -1527,6 +1712,26 @@
     els.referencesDialog.showModal();
   });
   els.closeReferencesBtn.addEventListener('click', () => els.referencesDialog.close());
+
+  els.essayCameraBtn.addEventListener('click', () => openCamera('essay'));
+  els.referenceCameraBtn.addEventListener('click', () => openCamera('reference'));
+
+  els.capturePhotoBtn.addEventListener('click', captureCameraFrame);
+  els.retakePhotoBtn.addEventListener('click', retakeCameraPhoto);
+  els.usePhotoBtn.addEventListener('click', useCapturedPhoto);
+  els.fallbackPhotoBtn.addEventListener('click', openFallbackImagePicker);
+  els.closeCameraBtn.addEventListener('click', closeCameraDialog);
+
+  els.cameraDialog.addEventListener('cancel', (e) => {
+    e.preventDefault();
+    closeCameraDialog();
+  });
+
+  els.cameraDialog.addEventListener('click', (e) => {
+    if (e.target === els.cameraDialog) closeCameraDialog();
+  });
+
+
   els.fileInput.addEventListener('change', async () => {
     await handleDocumentFile(
       els.fileInput.files?.[0],
