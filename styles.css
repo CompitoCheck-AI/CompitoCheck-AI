@@ -193,3 +193,68 @@ dialog::backdrop{background:rgba(15,23,42,.55)}
   .classroom-actions .btn{flex:1 1 45%}
   .timeline-item{grid-template-columns:64px 1fr}
 }
+
+
+.mode-switch{
+  display:flex;gap:8px;justify-content:center;padding:10px 14px;
+  background:#eaf0f8;border-bottom:1px solid var(--border)
+}
+.mode-btn{
+  border:1px solid var(--border);background:#fff;border-radius:999px;
+  padding:9px 16px;font-weight:800;color:var(--text)
+}
+.mode-btn.active{background:#0f172a;color:#fff;border-color:#0f172a}
+
+.exam-code-box{
+  margin-top:14px;border:2px dashed var(--primary);border-radius:14px;
+  padding:16px;text-align:center;background:#f7faff
+}
+.exam-code-box span{display:block;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase}
+.exam-code-box strong{display:block;font-size:34px;letter-spacing:7px;margin:6px 0}
+
+.submissions-list{display:flex;flex-direction:column;gap:10px}
+.submission-item{
+  border:1px solid var(--border);border-radius:12px;padding:14px;background:#fff
+}
+.submission-head{
+  display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap
+}
+.submission-meta{color:var(--muted);font-size:12px;margin-top:4px}
+.submission-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+
+.student-shell{max-width:980px;margin:0 auto;padding:22px}
+.student-card{
+  background:#fff;border:1px solid var(--border);border-radius:18px;
+  box-shadow:var(--shadow);padding:22px
+}
+.student-head,.exam-student-banner{
+  display:flex;justify-content:space-between;gap:16px;align-items:flex-start
+}
+.exam-student-banner{
+  border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:16px
+}
+.student-timer-box{text-align:right}
+.student-timer-box strong{display:block;font-size:28px;font-variant-numeric:tabular-nums}
+.prompt-box{
+  border-left:4px solid var(--primary);background:#f8fbff;
+  padding:14px 16px;border-radius:10px;margin:16px 0
+}
+.prompt-box p{margin-bottom:0;white-space:pre-wrap}
+.student-session-stats{
+  display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;
+  color:var(--muted);font-size:13px
+}
+.done-panel{text-align:center;padding:30px 10px}
+.done-panel h3{font-size:26px;color:#067647}
+.submission-detail{
+  margin-top:10px;padding:12px;background:#fcfcfd;border-radius:10px;border:1px solid var(--border)
+}
+.submission-detail pre{
+  white-space:pre-wrap;font:inherit;line-height:1.5;margin:8px 0 0
+}
+@media(max-width:650px){
+  .student-shell{padding:10px}
+  .student-card{padding:14px}
+  .student-head,.exam-student-banner{flex-direction:column}
+  .student-timer-box{text-align:left}
+}

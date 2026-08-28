@@ -22,7 +22,13 @@
     <button id="installBtn" class="btn ghost" hidden>Installa app</button>
   </header>
 
-  <main class="layout">
+  <nav class="mode-switch" aria-label="Modalità applicazione">
+    <button id="teacherModeBtn" class="mode-btn active" type="button">Modalità Docente</button>
+    <button id="studentModeBtn" class="mode-btn" type="button">Modalità Studente</button>
+  </nav>
+
+
+  <main id="teacherMain" class="layout">
     <aside class="sidebar">
       <section class="card">
         <h2>Studente</h2>
@@ -53,6 +59,69 @@
     </aside>
 
     <section class="content">
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h2>Crea una prova</h2>
+            <p class="muted">Prepara una traccia e genera un codice da comunicare agli studenti.</p>
+          </div>
+          <span id="activeExamBadge" class="pill">Nessuna prova attiva</span>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <label for="examTitle">Titolo prova</label>
+            <input id="examTitle" placeholder="Es. English test - 3B" maxlength="100" />
+          </div>
+          <div>
+            <label for="examLanguage">Lingua</label>
+            <select id="examLanguage">
+              <option value="it">Italiano</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="examPrompt" style="margin-top:12px">Traccia</label>
+        <textarea id="examPrompt" rows="5" placeholder="Scrivi qui la traccia del compito..."></textarea>
+
+        <div class="grid two" style="margin-top:12px">
+          <div>
+            <label for="examDuration">Durata indicativa (minuti)</label>
+            <input id="examDuration" type="number" min="10" max="300" value="60" />
+          </div>
+          <div>
+            <label for="examClass">Classe</label>
+            <input id="examClass" maxlength="50" placeholder="Es. 3B" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="createExamBtn" class="btn primary" type="button">Genera codice prova</button>
+          <button id="closeExamBtn" class="btn danger-outline" type="button" disabled>Chiudi prova</button>
+        </div>
+
+        <div id="examCodeBox" class="exam-code-box" hidden>
+          <span>Codice prova</span>
+          <strong id="examCode">------</strong>
+          <p id="examSummary" class="muted small"></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-head">
+          <div>
+            <h2>Consegne studenti</h2>
+            <p class="muted">Le consegne effettuate su questo browser vengono archiviate qui.</p>
+          </div>
+          <button id="exportAllSubmissionsBtn" class="btn" type="button">Esporta registro</button>
+        </div>
+        <div id="submissionsList" class="submissions-list">
+          <p class="muted">Nessuna consegna registrata.</p>
+        </div>
+      </section>
+
       <section class="card hero">
         <div class="hero-head">
           <div>
@@ -232,6 +301,71 @@
       </section>
     </section>
   </main>
+
+
+  <main id="studentMain" class="student-shell" hidden>
+    <section class="student-card">
+      <div class="student-head">
+        <div>
+          <h2>Compito in classe</h2>
+          <p class="muted">Inserisci il codice comunicato dal docente.</p>
+        </div>
+        <span class="pill">Modalità Studente</span>
+      </div>
+
+      <div id="studentJoinPanel">
+        <label for="studentExamCode">Codice prova</label>
+        <input id="studentExamCode" maxlength="6" placeholder="Es. A7K29Q" autocomplete="off" />
+        <label for="studentDisplayName" style="margin-top:12px">Nome o codice studente</label>
+        <input id="studentDisplayName" maxlength="60" placeholder="Es. Mario Rossi / 3B-07" />
+        <div class="actions">
+          <button id="joinExamBtn" class="btn primary" type="button">Entra nella prova</button>
+        </div>
+        <div id="studentJoinMessage" class="validation" aria-live="polite"></div>
+      </div>
+
+      <div id="studentExamPanel" hidden>
+        <div class="exam-student-banner">
+          <div>
+            <span class="muted small">Prova</span>
+            <h3 id="studentExamTitle">—</h3>
+            <p id="studentExamMeta" class="muted"></p>
+          </div>
+          <div class="student-timer-box">
+            <span class="muted small">Tempo sessione</span>
+            <strong id="studentSessionTimer">00:00</strong>
+          </div>
+        </div>
+
+        <section class="prompt-box">
+          <strong>Traccia</strong>
+          <p id="studentExamPrompt"></p>
+        </section>
+
+        <label for="studentEssay">Svolgimento</label>
+        <textarea id="studentEssay" class="essay" rows="20" placeholder="Scrivi qui il tuo compito..."></textarea>
+
+        <div class="student-session-stats">
+          <span>Digitati: <strong id="studentTypedChars">0</strong></span>
+          <span>Incollati: <strong id="studentPastedChars">0</strong></span>
+          <span>Cancellazioni: <strong id="studentDeletedChars">0</strong></span>
+        </div>
+
+        <div class="actions">
+          <button id="submitExamBtn" class="btn primary" type="button">Consegna compito</button>
+          <button id="leaveExamBtn" class="btn ghost" type="button">Esci senza consegnare</button>
+        </div>
+        <div id="studentExamMessage" class="validation" aria-live="polite"></div>
+      </div>
+
+      <div id="studentDonePanel" hidden class="done-panel">
+        <h3>Compito consegnato</h3>
+        <p>La consegna è stata registrata su questo dispositivo.</p>
+        <button id="studentNewSessionBtn" class="btn" type="button">Torna all’accesso</button>
+      </div>
+    </section>
+  </main>
+
 
   <dialog id="studentDialog">
     <form method="dialog" id="studentForm">

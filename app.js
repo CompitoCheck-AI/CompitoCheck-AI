@@ -3,6 +3,8 @@
   'use strict';
 
   const STORAGE_KEY = 'compitocheck_ai_v1_students';
+  const EXAMS_KEY = 'compitocheck_ai_v3_exams';
+  const SUBMISSIONS_KEY = 'compitocheck_ai_v3_submissions';
   const $ = (id) => document.getElementById(id);
 
   const els = {
@@ -63,12 +65,53 @@
     pastedPctMeter: $('pastedPctMeter'),
     pasteAssessment: $('pasteAssessment'),
     eventTimeline: $('eventTimeline'),
-    exportSessionBtn: $('exportSessionBtn')
+    exportSessionBtn: $('exportSessionBtn'),
+    teacherModeBtn: $('teacherModeBtn'),
+    studentModeBtn: $('studentModeBtn'),
+    teacherMain: $('teacherMain'),
+    studentMain: $('studentMain'),
+    examTitle: $('examTitle'),
+    examLanguage: $('examLanguage'),
+    examPrompt: $('examPrompt'),
+    examDuration: $('examDuration'),
+    examClass: $('examClass'),
+    createExamBtn: $('createExamBtn'),
+    closeExamBtn: $('closeExamBtn'),
+    activeExamBadge: $('activeExamBadge'),
+    examCodeBox: $('examCodeBox'),
+    examCode: $('examCode'),
+    examSummary: $('examSummary'),
+    submissionsList: $('submissionsList'),
+    exportAllSubmissionsBtn: $('exportAllSubmissionsBtn'),
+    studentJoinPanel: $('studentJoinPanel'),
+    studentExamPanel: $('studentExamPanel'),
+    studentDonePanel: $('studentDonePanel'),
+    studentExamCode: $('studentExamCode'),
+    studentDisplayName: $('studentDisplayName'),
+    joinExamBtn: $('joinExamBtn'),
+    studentJoinMessage: $('studentJoinMessage'),
+    studentExamTitle: $('studentExamTitle'),
+    studentExamMeta: $('studentExamMeta'),
+    studentSessionTimer: $('studentSessionTimer'),
+    studentExamPrompt: $('studentExamPrompt'),
+    studentEssay: $('studentEssay'),
+    studentTypedChars: $('studentTypedChars'),
+    studentPastedChars: $('studentPastedChars'),
+    studentDeletedChars: $('studentDeletedChars'),
+    submitExamBtn: $('submitExamBtn'),
+    leaveExamBtn: $('leaveExamBtn'),
+    studentExamMessage: $('studentExamMessage'),
+    studentNewSessionBtn: $('studentNewSessionBtn')
   };
 
   let students = loadStudents();
   let lastAnalysis = null;
   let deferredPrompt = null;
+  let exams = loadJson(EXAMS_KEY, []);
+  let submissions = loadJson(SUBMISSIONS_KEY, []);
+  let currentStudentExam = null;
+  let studentSession = null;
+  let studentTimerId = null;
 
   let classroom = {
     state: 'idle',
@@ -86,6 +129,19 @@
     pasteGuard: false
   };
 
+  function loadJson(key, fallback) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+      return parsed ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function saveJson(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+  }
+
   function loadStudents() {
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -99,6 +155,9 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
     renderStudentSelect();
   renderClassroom();
+  renderActiveExam();
+  renderSubmissions();
+  switchMode('teacher');
   }
 
   function uid() {
@@ -673,6 +732,395 @@
   }
 
 
+
+  function switchMode(mode) {
+    const teacher = mode === 'teacher';
+    els.teacherMain.hidden = !teacher;
+    els.studentMain.hidden = teacher;
+    els.teacherModeBtn.classList.toggle('active', teacher);
+    els.studentModeBtn.classList.toggle('active', !teacher);
+    if (teacher) {
+      renderActiveExam();
+      renderSubmissions();
+    }
+  }
+
+  function generateExamCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    do {
+      code = Array.from({length:6}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+    } while (exams.some(e => e.code === code && e.active));
+    return code;
+  }
+
+  function activeExam() {
+    return exams.find(e => e.active) || null;
+  }
+
+  function createExam() {
+    const title = els.examTitle.value.trim();
+    const prompt = els.examPrompt.value.trim();
+    const lang = els.examLanguage.value;
+    const duration = clamp(parseInt(els.examDuration.value || '60', 10), 10, 300);
+    const className = els.examClass.value.trim();
+
+    if (!title) return showValidation('Inserisci il titolo della prova.');
+    if (!prompt) return showValidation('Inserisci la traccia della prova.');
+
+    exams.forEach(e => e.active = false);
+    const exam = {
+      id: uid(),
+      code: generateExamCode(),
+      title,
+      prompt,
+      lang,
+      duration,
+      className,
+      active: true,
+      createdAt: new Date().toISOString()
+    };
+    exams.push(exam);
+    saveJson(EXAMS_KEY, exams);
+    renderActiveExam();
+    showValidation('Prova creata correttamente.', false);
+  }
+
+  function closeExam() {
+    const exam = activeExam();
+    if (!exam) return;
+    exam.active = false;
+    exam.closedAt = new Date().toISOString();
+    saveJson(EXAMS_KEY, exams);
+    renderActiveExam();
+  }
+
+  function renderActiveExam() {
+    const exam = activeExam();
+    if (!exam) {
+      els.activeExamBadge.textContent = 'Nessuna prova attiva';
+      els.examCodeBox.hidden = true;
+      els.closeExamBtn.disabled = true;
+      return;
+    }
+    els.activeExamBadge.textContent = 'Prova attiva';
+    els.examCodeBox.hidden = false;
+    els.examCode.textContent = exam.code;
+    els.examSummary.textContent = `${exam.title}${exam.className ? ' • ' + exam.className : ''} • ${exam.lang === 'en' ? 'English' : 'Italiano'} • ${exam.duration} min`;
+    els.closeExamBtn.disabled = false;
+  }
+
+  function findExamByCode(code) {
+    const normalized = (code || '').trim().toUpperCase();
+    return exams.find(e => e.code === normalized && e.active) || null;
+  }
+
+  function joinExam() {
+    const code = els.studentExamCode.value.trim().toUpperCase();
+    const name = els.studentDisplayName.value.trim();
+    const exam = findExamByCode(code);
+
+    if (!code || !name) {
+      els.studentJoinMessage.textContent = 'Inserisci codice prova e nome/codice studente.';
+      return;
+    }
+    if (!exam) {
+      els.studentJoinMessage.textContent = 'Codice non valido oppure prova già chiusa.';
+      return;
+    }
+
+    currentStudentExam = exam;
+    studentSession = {
+      startedAt: Date.now(),
+      typedChars: 0,
+      pastedChars: 0,
+      deletedChars: 0,
+      events: [],
+      lastValue: '',
+      lastInputAt: Date.now(),
+      pasteGuard: false
+    };
+    els.studentEssay.value = '';
+    els.studentJoinMessage.textContent = '';
+    els.studentExamMessage.textContent = '';
+    els.studentJoinPanel.hidden = true;
+    els.studentDonePanel.hidden = true;
+    els.studentExamPanel.hidden = false;
+
+    els.studentExamTitle.textContent = exam.title;
+    els.studentExamMeta.textContent = `${exam.className ? exam.className + ' • ' : ''}${exam.lang === 'en' ? 'English' : 'Italiano'} • durata indicativa ${exam.duration} min`;
+    els.studentExamPrompt.textContent = exam.prompt;
+
+    clearInterval(studentTimerId);
+    studentTimerId = setInterval(renderStudentSession, 1000);
+    renderStudentSession();
+    els.studentEssay.focus();
+  }
+
+  function studentElapsed() {
+    return studentSession ? Date.now() - studentSession.startedAt : 0;
+  }
+
+  function addStudentEvent(type, message, extra={}) {
+    if (!studentSession) return;
+    studentSession.events.push({
+      type, message, elapsed: studentElapsed(), at: new Date().toISOString(), ...extra
+    });
+    if (studentSession.events.length > 300) studentSession.events.shift();
+  }
+
+  function studentBeforeInput(e) {
+    if (!studentSession) return;
+    const type = e.inputType || '';
+    if (type.startsWith('delete')) {
+      const selectionLen = Math.max(0, els.studentEssay.selectionEnd - els.studentEssay.selectionStart);
+      studentSession.deletedChars += Math.max(1, selectionLen);
+    }
+    studentSession.lastInputAt = Date.now();
+  }
+
+  function studentInput() {
+    if (!studentSession) return;
+    const current = els.studentEssay.value;
+    const prev = studentSession.lastValue || '';
+    const delta = current.length - prev.length;
+    if (!studentSession.pasteGuard && delta > 0) {
+      studentSession.typedChars += delta;
+      if (delta >= 80) addStudentEvent('burst', `Inserimento rapido di ${delta} caratteri`, {chars:delta});
+    }
+    studentSession.lastValue = current;
+    studentSession.pasteGuard = false;
+    studentSession.lastInputAt = Date.now();
+    renderStudentSession();
+  }
+
+  function studentPaste(e) {
+    if (!studentSession) return;
+    const pasted = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+    const len = pasted.length;
+    studentSession.pastedChars += len;
+    studentSession.pasteGuard = true;
+    addStudentEvent('paste', `Incollati ${len} caratteri`, {chars:len});
+    setTimeout(() => {
+      if (!studentSession) return;
+      studentSession.lastValue = els.studentEssay.value;
+      studentSession.pasteGuard = false;
+      renderStudentSession();
+    }, 0);
+  }
+
+  function renderStudentSession() {
+    if (!studentSession) return;
+    els.studentSessionTimer.textContent = formatElapsed(studentElapsed());
+    els.studentTypedChars.textContent = studentSession.typedChars;
+    els.studentPastedChars.textContent = studentSession.pastedChars;
+    els.studentDeletedChars.textContent = studentSession.deletedChars;
+  }
+
+  function leaveExam() {
+    if (els.studentEssay.value.trim() && !confirm('Uscire senza consegnare? Il testo verrà perso.')) return;
+    clearInterval(studentTimerId);
+    studentTimerId = null;
+    currentStudentExam = null;
+    studentSession = null;
+    els.studentExamPanel.hidden = true;
+    els.studentDonePanel.hidden = true;
+    els.studentJoinPanel.hidden = false;
+  }
+
+  function submitExam() {
+    if (!currentStudentExam || !studentSession) return;
+    const text = normalizeText(els.studentEssay.value);
+    if (text.length < 30) {
+      els.studentExamMessage.textContent = 'Il compito è troppo breve per essere consegnato.';
+      return;
+    }
+    const name = els.studentDisplayName.value.trim();
+    const total = studentSession.typedChars + studentSession.pastedChars;
+    const typedPct = total ? Math.round(studentSession.typedChars / total * 100) : 0;
+    const pastedPct = total ? 100 - typedPct : 0;
+
+    const lang = currentStudentExam.lang;
+    const stats = basicStats(text, lang);
+    const ai = aiHeuristic(text, lang, stats);
+    const cefr = lang === 'en' ? estimateCEFR(text, stats) : 'N/D';
+    const corrections = ai.corrections;
+    const grades = gradeText(text, lang, stats, corrections);
+
+    const submission = {
+      id: uid(),
+      examId: currentStudentExam.id,
+      examCode: currentStudentExam.code,
+      examTitle: currentStudentExam.title,
+      className: currentStudentExam.className,
+      studentName: name,
+      lang,
+      text,
+      submittedAt: new Date().toISOString(),
+      durationMs: studentElapsed(),
+      typedChars: studentSession.typedChars,
+      pastedChars: studentSession.pastedChars,
+      deletedChars: studentSession.deletedChars,
+      typedPct,
+      pastedPct,
+      events: studentSession.events,
+      aiScore: ai.score,
+      cefr,
+      grades
+    };
+
+    submissions.push(submission);
+    saveJson(SUBMISSIONS_KEY, submissions);
+
+    clearInterval(studentTimerId);
+    studentTimerId = null;
+    currentStudentExam = null;
+    studentSession = null;
+    els.studentExamPanel.hidden = true;
+    els.studentJoinPanel.hidden = true;
+    els.studentDonePanel.hidden = false;
+  }
+
+  function studentResetAccess() {
+    els.studentExamCode.value = '';
+    els.studentEssay.value = '';
+    els.studentExamPanel.hidden = true;
+    els.studentDonePanel.hidden = true;
+    els.studentJoinPanel.hidden = false;
+    els.studentJoinMessage.textContent = '';
+    els.studentExamMessage.textContent = '';
+  }
+
+  function submissionSummary(s) {
+    return `${s.lang === 'en' ? 'English' : 'Italiano'} • ${formatElapsed(s.durationMs)} • IA ${s.aiScore}% • incollato ${s.pastedPct}%${s.cefr && s.cefr !== 'N/D' ? ' • ' + s.cefr : ''}`;
+  }
+
+  function renderSubmissions() {
+    if (!submissions.length) {
+      els.submissionsList.innerHTML = '<p class="muted">Nessuna consegna registrata.</p>';
+      return;
+    }
+
+    const sorted = submissions.slice().sort((a,b) => new Date(b.submittedAt) - new Date(a.submittedAt));
+    els.submissionsList.innerHTML = sorted.map(s => `
+      <article class="submission-item">
+        <div class="submission-head">
+          <div>
+            <strong>${escapeHtml(s.studentName)}</strong>
+            <div class="submission-meta">${escapeHtml(s.examTitle)}${s.className ? ' • ' + escapeHtml(s.className) : ''} • ${new Date(s.submittedAt).toLocaleString('it-IT')}</div>
+            <div class="submission-meta">${escapeHtml(submissionSummary(s))}</div>
+          </div>
+          <span class="badge ${s.pastedPct >= 50 ? 'high' : s.pastedPct >= 20 ? 'mid' : 'low'}">${s.pastedPct}% incollato</span>
+        </div>
+        <div class="submission-actions">
+          <button type="button" class="btn" data-view-submission="${s.id}">Apri</button>
+          <button type="button" class="btn" data-export-submission="${s.id}">Esporta</button>
+          <button type="button" class="btn danger-outline" data-delete-submission="${s.id}">Elimina</button>
+        </div>
+        <div id="detail-${s.id}" class="submission-detail" hidden></div>
+      </article>
+    `).join('');
+
+    els.submissionsList.querySelectorAll('[data-view-submission]').forEach(btn => {
+      btn.addEventListener('click', () => toggleSubmissionDetail(btn.dataset.viewSubmission));
+    });
+    els.submissionsList.querySelectorAll('[data-export-submission]').forEach(btn => {
+      btn.addEventListener('click', () => exportSubmission(btn.dataset.exportSubmission));
+    });
+    els.submissionsList.querySelectorAll('[data-delete-submission]').forEach(btn => {
+      btn.addEventListener('click', () => deleteSubmission(btn.dataset.deleteSubmission));
+    });
+  }
+
+  function toggleSubmissionDetail(id) {
+    const s = submissions.find(x => x.id === id);
+    const box = document.getElementById(`detail-${id}`);
+    if (!s || !box) return;
+    if (!box.hidden) {
+      box.hidden = true;
+      return;
+    }
+    box.innerHTML = `
+      <strong>Testo consegnato</strong>
+      <pre>${escapeHtml(s.text)}</pre>
+      <div class="stats-table">
+        <div class="stat"><span>Durata</span><strong>${formatElapsed(s.durationMs)}</strong></div>
+        <div class="stat"><span>Digitato</span><strong>${s.typedPct}%</strong></div>
+        <div class="stat"><span>Incollato</span><strong>${s.pastedPct}%</strong></div>
+        <div class="stat"><span>Indicatore IA</span><strong>${s.aiScore}%</strong></div>
+      </div>
+    `;
+    box.hidden = false;
+  }
+
+  function deleteSubmission(id) {
+    const s = submissions.find(x => x.id === id);
+    if (!s) return;
+    if (!confirm(`Eliminare la consegna di ${s.studentName}?`)) return;
+    submissions = submissions.filter(x => x.id !== id);
+    saveJson(SUBMISSIONS_KEY, submissions);
+    renderSubmissions();
+  }
+
+  function submissionReport(s) {
+    const lines = [
+      'COMPITOCHECK AI — CONSEGNA STUDENTE',
+      '===================================',
+      `Studente: ${s.studentName}`,
+      `Prova: ${s.examTitle}`,
+      `Classe: ${s.className || '-'}`,
+      `Codice prova: ${s.examCode}`,
+      `Data consegna: ${new Date(s.submittedAt).toLocaleString('it-IT')}`,
+      `Durata: ${formatElapsed(s.durationMs)}`,
+      `Digitato: ${s.typedPct}% (${s.typedChars} caratteri)`,
+      `Incollato: ${s.pastedPct}% (${s.pastedChars} caratteri)`,
+      `Cancellazioni stimate: ${s.deletedChars}`,
+      `Indicatore IA: ${s.aiScore}%`,
+      `Livello inglese: ${s.cefr || 'N/D'}`,
+      `Voto indicativo: ${s.grades?.voto?.toFixed ? s.grades.voto.toFixed(1) + '/10' : 'N/D'}`,
+      '',
+      'TESTO',
+      s.text,
+      '',
+      'CRONOLOGIA'
+    ];
+    (s.events || []).forEach(ev => lines.push(`${formatElapsed(ev.elapsed)} — ${ev.message}`));
+    lines.push('', 'NOTA: questi dati sono indicatori di supporto e non costituiscono prova automatica dell’uso di IA.');
+    return lines.join('\n');
+  }
+
+  function exportSubmission(id) {
+    const s = submissions.find(x => x.id === id);
+    if (!s) return;
+    const blob = new Blob([submissionReport(s)], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `consegna-${s.studentName.toLowerCase().replace(/[^a-z0-9à-ÿ]+/gi,'-') || 'studente'}-${s.examCode}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportAllSubmissions() {
+    const lines = ['COMPITOCHECK AI — REGISTRO CONSEGNE','================================',''];
+    submissions.slice().sort((a,b)=>new Date(a.submittedAt)-new Date(b.submittedAt)).forEach((s,i) => {
+      lines.push(`${i+1}. ${s.studentName} | ${s.examTitle} | ${new Date(s.submittedAt).toLocaleString('it-IT')} | IA ${s.aiScore}% | incollato ${s.pastedPct}% | durata ${formatElapsed(s.durationMs)}`);
+    });
+    if (!submissions.length) lines.push('Nessuna consegna.');
+    const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'compitocheck-registro-consegne.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+
   function nowMs() { return Date.now(); }
 
   function formatElapsed(ms) {
@@ -960,6 +1408,9 @@
     saveStudents();
     renderStudentSelect();
   renderClassroom();
+  renderActiveExam();
+  renderSubmissions();
+  switchMode('teacher');
   });
 
   els.studentSelect.addEventListener('change', renderStudentInfo);
@@ -996,6 +1447,23 @@
   });
 
 
+
+  els.teacherModeBtn.addEventListener('click', () => switchMode('teacher'));
+  els.studentModeBtn.addEventListener('click', () => switchMode('student'));
+
+  els.createExamBtn.addEventListener('click', createExam);
+  els.closeExamBtn.addEventListener('click', closeExam);
+  els.exportAllSubmissionsBtn.addEventListener('click', exportAllSubmissions);
+
+  els.joinExamBtn.addEventListener('click', joinExam);
+  els.studentEssay.addEventListener('beforeinput', studentBeforeInput);
+  els.studentEssay.addEventListener('input', studentInput);
+  els.studentEssay.addEventListener('paste', studentPaste);
+  els.submitExamBtn.addEventListener('click', submitExam);
+  els.leaveExamBtn.addEventListener('click', leaveExam);
+  els.studentNewSessionBtn.addEventListener('click', studentResetAccess);
+
+
   els.classroomToggle.addEventListener('change', () => {
     els.classroomPanel.hidden = !els.classroomToggle.checked;
     renderClassroom();
@@ -1020,4 +1488,7 @@
 
   renderStudentSelect();
   renderClassroom();
+  renderActiveExam();
+  renderSubmissions();
+  switchMode('teacher');
 })();

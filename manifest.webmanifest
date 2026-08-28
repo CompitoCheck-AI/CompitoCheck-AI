@@ -1,12 +1,12 @@
 {
-  "name": "CompitoCheck AI",
+  "name": "CompitoCheck AI V3",
   "short_name": "CompitoCheck",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7fb",
   "theme_color": "#0f172a",
-  "description": "Supporto alla correzione e analisi stilistica di elaborati scolastici in italiano e inglese.",
+  "description": "Piattaforma docente/studente per compiti in classe, correzione e analisi stilistica.",
   "icons": [
     {
       "src": "icon.svg",
