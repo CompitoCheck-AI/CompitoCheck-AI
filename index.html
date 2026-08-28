@@ -45,6 +45,23 @@
         <h2>Profilo stilistico</h2>
         <p class="muted small">Salva 2–5 elaborati autentici per confrontare il nuovo compito con lo stile abituale.</p>
         <textarea id="referenceText" rows="7" placeholder="Incolla qui un vecchio compito sicuramente scritto dallo studente..."></textarea>
+
+        <div class="file-row compact-file-row">
+          <label class="file-label">
+            <input id="referenceFileInput" type="file"
+              accept=".txt,.md,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <span>📄 Carica file</span>
+          </label>
+
+          <label class="file-label camera-label">
+            <input id="referencePhotoInput" type="file" accept="image/*" capture="environment" />
+            <span>📷 Scatta foto</span>
+          </label>
+
+          <span id="referenceFileName" class="muted small">Nessun file caricato</span>
+        </div>
+        <div id="referenceOcrStatus" class="ocr-status muted small" aria-live="polite"></div>
+
         <div class="row">
           <button id="saveReferenceBtn" class="btn">Salva campione</button>
           <button id="manageReferencesBtn" class="btn ghost">Gestisci</button>
@@ -141,12 +158,19 @@
         <div class="file-row">
           <label class="file-label">
             <input id="fileInput" type="file" accept=".txt,.md,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-            <span>Carica file</span>
+            <span>📄 Carica file</span>
           </label>
+
+          <label class="file-label camera-label">
+            <input id="essayPhotoInput" type="file" accept="image/*" capture="environment" />
+            <span>📷 Scatta foto</span>
+          </label>
+
           <span id="fileName" class="muted small">Nessun file caricato</span>
         </div>
+        <div id="essayOcrStatus" class="ocr-status muted small" aria-live="polite"></div>
 
-        <textarea id="essayText" class="essay" rows="18" placeholder="Incolla qui il compito dello studente..."></textarea>
+        <textarea id="essayText" class="essay" rows="18" placeholder="Incolla qui il compito dello studente oppure usa Carica file / Scatta foto..."></textarea>
 
         <div class="actions">
           <button id="analyzeBtn" class="btn primary">Analizza compito</button>
@@ -396,6 +420,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
     window.pdfjsLib = pdfjsLib;
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

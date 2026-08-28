@@ -258,3 +258,26 @@ dialog::backdrop{background:rgba(15,23,42,.55)}
   .student-head,.exam-student-banner{flex-direction:column}
   .student-timer-box{text-align:left}
 }
+
+
+/* V3.1 - caricamento documenti e OCR da foto */
+.compact-file-row{margin-top:10px;margin-bottom:4px}
+.camera-label{border-color:#7f56d9;color:#6941c6}
+.ocr-status{
+  min-height:20px;
+  margin:4px 0 8px;
+  font-weight:650;
+}
+.ocr-status.working{color:#b54708}
+.ocr-status.success{color:#067647}
+.ocr-status.error{color:#b42318}
+@media(max-width:650px){
+  .compact-file-row .file-label,
+  .file-row .file-label{
+    flex:1 1 44%;
+  }
+  .compact-file-row > .muted,
+  .file-row > .muted{
+    flex-basis:100%;
+  }
+}

@@ -1,5 +1,5 @@
 
-const CACHE = 'compitocheck-ai-v3-1';
+const CACHE = 'compitocheck-ai-v3-1-ocr-1';
 const CORE = ['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icon.svg'];
 
 self.addEventListener('install', event => {

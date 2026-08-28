@@ -13,13 +13,19 @@
     deleteStudentBtn: $('deleteStudentBtn'),
     studentInfo: $('studentInfo'),
     referenceText: $('referenceText'),
+    referenceFileInput: $('referenceFileInput'),
+    referencePhotoInput: $('referencePhotoInput'),
+    referenceFileName: $('referenceFileName'),
+    referenceOcrStatus: $('referenceOcrStatus'),
     saveReferenceBtn: $('saveReferenceBtn'),
     saveAsReferenceBtn: $('saveAsReferenceBtn'),
     manageReferencesBtn: $('manageReferencesBtn'),
     referenceCount: $('referenceCount'),
     languageSelect: $('languageSelect'),
     fileInput: $('fileInput'),
+    essayPhotoInput: $('essayPhotoInput'),
     fileName: $('fileName'),
+    essayOcrStatus: $('essayOcrStatus'),
     essayText: $('essayText'),
     analyzeBtn: $('analyzeBtn'),
     clearBtn: $('clearBtn'),
@@ -42,6 +48,7 @@
     studentDialog: $('studentDialog'),
     studentForm: $('studentForm'),
     studentName: $('studentName'),
+    cancelStudentBtn: $('cancelStudentBtn'),
     confirmStudentBtn: $('confirmStudentBtn'),
     referencesDialog: $('referencesDialog'),
     referencesList: $('referencesList'),
@@ -673,39 +680,134 @@
     return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
   }
 
-  async function handleFile(file) {
-    if (!file) return;
-    els.fileName.textContent = file.name;
-    const ext = file.name.toLowerCase().split('.').pop();
-    showValidation('Caricamento file...', false);
-    try {
-      if (ext === 'txt' || ext === 'md') {
-        els.essayText.value = await file.text();
-      } else if (ext === 'docx') {
-        if (!window.mammoth) throw new Error('Modulo DOCX non disponibile. Controlla la connessione Internet.');
-        const buffer = await file.arrayBuffer();
-        const result = await window.mammoth.extractRawText({arrayBuffer:buffer});
-        els.essayText.value = result.value;
-      } else if (ext === 'pdf') {
-        if (!window.pdfjsLib) throw new Error('Modulo PDF non disponibile. Riprova tra qualche secondo o controlla la connessione.');
-        const data = new Uint8Array(await file.arrayBuffer());
-        const pdf = await window.pdfjsLib.getDocument({data}).promise;
-        let text = '';
-        const maxPages = Math.min(pdf.numPages, 50);
-        for (let p=1; p<=maxPages; p++) {
-          const page = await pdf.getPage(p);
-          const content = await page.getTextContent();
-          text += content.items.map(i=>i.str).join(' ') + '\n\n';
-        }
-        els.essayText.value = text.trim();
-      } else {
-        throw new Error('Formato non supportato.');
+  async function extractDocumentText(file) {
+    if (!file) return '';
+    const ext = (file.name || '').toLowerCase().split('.').pop();
+
+    if (ext === 'txt' || ext === 'md') {
+      return await file.text();
+    }
+
+    if (ext === 'docx') {
+      if (!window.mammoth) {
+        throw new Error('Modulo DOCX non disponibile. Controlla la connessione Internet.');
       }
-      showValidation('File caricato correttamente.', false);
+      const buffer = await file.arrayBuffer();
+      const result = await window.mammoth.extractRawText({arrayBuffer:buffer});
+      return result.value || '';
+    }
+
+    if (ext === 'pdf') {
+      if (!window.pdfjsLib) {
+        throw new Error('Modulo PDF non disponibile. Riprova tra qualche secondo o controlla la connessione.');
+      }
+      const data = new Uint8Array(await file.arrayBuffer());
+      const pdf = await window.pdfjsLib.getDocument({data}).promise;
+      let text = '';
+      const maxPages = Math.min(pdf.numPages, 50);
+
+      for (let p = 1; p <= maxPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        text += content.items.map(i => i.str).join(' ') + '\n\n';
+      }
+      return text.trim();
+    }
+
+    throw new Error('Formato non supportato. Usa TXT, MD, DOCX o PDF.');
+  }
+
+  async function handleDocumentFile(file, targetEl, nameEl, statusEl) {
+    if (!file) return;
+    if (nameEl) nameEl.textContent = file.name;
+
+    setOcrStatus(statusEl, 'Caricamento file...', 'working');
+    try {
+      const text = await extractDocumentText(file);
+      if (!normalizeText(text)) {
+        throw new Error('Il file non contiene testo leggibile. Se è una scansione o una foto, usa “Scatta foto”.');
+      }
+      targetEl.value = text.trim();
+      setOcrStatus(statusEl, 'File caricato: il testo è stato inserito automaticamente.', 'success');
     } catch (err) {
-      showValidation(err.message || 'Impossibile leggere il file.');
+      setOcrStatus(statusEl, err.message || 'Impossibile leggere il file.', 'error');
     }
   }
+
+  function setOcrStatus(el, message, state='') {
+    if (!el) return;
+    el.textContent = message || '';
+    el.className = 'ocr-status muted small' + (state ? ' ' + state : '');
+  }
+
+  function ocrLanguageForEssay() {
+    const selected = els.languageSelect?.value || 'auto';
+    if (selected === 'it') return 'ita';
+    if (selected === 'en') return 'eng';
+    return 'ita+eng';
+  }
+
+  async function recognizePhoto(file, targetEl, statusEl, lang='ita+eng') {
+    if (!file) return;
+
+    if (!window.Tesseract) {
+      setOcrStatus(
+        statusEl,
+        'Modulo OCR non disponibile. Controlla la connessione Internet e ricarica la pagina.',
+        'error'
+      );
+      return;
+    }
+
+    setOcrStatus(statusEl, 'Preparazione OCR...', 'working');
+
+    try {
+      const result = await window.Tesseract.recognize(file, lang, {
+        logger: message => {
+          if (!message) return;
+
+          if (message.status === 'recognizing text' && typeof message.progress === 'number') {
+            const percent = Math.round(message.progress * 100);
+            setOcrStatus(statusEl, `Lettura della foto: ${percent}%`, 'working');
+          } else if (message.status) {
+            const friendly = {
+              'loading tesseract core': 'Caricamento motore OCR...',
+              'initializing tesseract': 'Inizializzazione OCR...',
+              'loading language traineddata': 'Caricamento lingua OCR...',
+              'initializing api': 'Preparazione riconoscimento...'
+            };
+            if (friendly[message.status]) {
+              setOcrStatus(statusEl, friendly[message.status], 'working');
+            }
+          }
+        }
+      });
+
+      const recognized = normalizeText(result?.data?.text || '');
+      if (!recognized) {
+        throw new Error('Non sono riuscito a riconoscere testo nella foto. Prova con più luce e una foto più diritta.');
+      }
+
+      // Se è già presente una pagina, aggiunge la nuova foto in fondo.
+      const existing = targetEl.value.trim();
+      targetEl.value = existing ? `${existing}\n\n${recognized}` : recognized;
+
+      setOcrStatus(
+        statusEl,
+        'Foto letta. Controlla il testo riconosciuto e correggi eventuali errori OCR.',
+        'success'
+      );
+      targetEl.focus();
+    } catch (err) {
+      console.error('OCR error:', err);
+      setOcrStatus(
+        statusEl,
+        err?.message || 'Errore durante il riconoscimento della foto.',
+        'error'
+      );
+    }
+  }
+
 
   function renderReferences() {
     const s = currentStudent();
@@ -1389,8 +1491,12 @@
     setTimeout(()=>els.studentName.focus(),30);
   });
 
-  $('cancelStudentBtn').addEventListener('click', () => {
-  els.studentDialog.close();
+  els.cancelStudentBtn.addEventListener('click', () => {
+    els.studentDialog.close();
+  });
+
+  els.studentDialog.addEventListener('click', (e) => {
+    if (e.target === els.studentDialog) els.studentDialog.close();
   });
 
   els.studentForm.addEventListener('submit', (e) => {
@@ -1411,10 +1517,6 @@
     students = students.filter(x => x.id !== s.id);
     saveStudents();
     renderStudentSelect();
-  renderClassroom();
-  renderActiveExam();
-  renderSubmissions();
-  switchMode('teacher');
   });
 
   els.studentSelect.addEventListener('change', renderStudentInfo);
@@ -1425,12 +1527,49 @@
     els.referencesDialog.showModal();
   });
   els.closeReferencesBtn.addEventListener('click', () => els.referencesDialog.close());
-  els.fileInput.addEventListener('change', () => handleFile(els.fileInput.files?.[0]));
+  els.fileInput.addEventListener('change', async () => {
+    await handleDocumentFile(
+      els.fileInput.files?.[0],
+      els.essayText,
+      els.fileName,
+      els.essayOcrStatus
+    );
+    els.fileInput.value = '';
+  });
+
+  els.essayPhotoInput.addEventListener('change', async () => {
+    const file = els.essayPhotoInput.files?.[0];
+    if (file) {
+      els.fileName.textContent = file.name || 'Foto acquisita';
+      await recognizePhoto(file, els.essayText, els.essayOcrStatus, ocrLanguageForEssay());
+    }
+    els.essayPhotoInput.value = '';
+  });
+
+  els.referenceFileInput.addEventListener('change', async () => {
+    await handleDocumentFile(
+      els.referenceFileInput.files?.[0],
+      els.referenceText,
+      els.referenceFileName,
+      els.referenceOcrStatus
+    );
+    els.referenceFileInput.value = '';
+  });
+
+  els.referencePhotoInput.addEventListener('change', async () => {
+    const file = els.referencePhotoInput.files?.[0];
+    if (file) {
+      els.referenceFileName.textContent = file.name || 'Foto acquisita';
+      await recognizePhoto(file, els.referenceText, els.referenceOcrStatus, 'ita+eng');
+    }
+    els.referencePhotoInput.value = '';
+  });
   els.analyzeBtn.addEventListener('click', analyze);
   els.clearBtn.addEventListener('click', () => {
     els.essayText.value = '';
     els.fileInput.value = '';
     els.fileName.textContent = 'Nessun file caricato';
+    setOcrStatus(els.essayOcrStatus, '');
     els.results.hidden = true;
     lastAnalysis = null;
     showValidation('', false);

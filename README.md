@@ -1,4 +1,4 @@
-# CompitoCheck AI — V3
+# CompitoCheck AI — V3.1
 
 Webapp statica bilingue Italiano/English pensata come supporto alla correzione scolastica.
 
@@ -81,3 +81,33 @@ Non può stabilire automaticamente da quale programma o sito provenga il testo i
 ## Limite della V3 statica
 Questa V3 funziona interamente nel browser. Di conseguenza il codice prova e le consegne sono visibili solo sullo stesso dispositivo/browser.
 Per usare davvero più telefoni o computer contemporaneamente serve una V4 con backend/cloud (per esempio Cloudflare Worker + D1/KV oppure Firebase/Supabase).
+
+
+## Novità V3.1 — File e foto con OCR
+Nelle sezioni “Profilo stilistico” e “Analizza un compito” sono disponibili:
+
+- **Carica file**: TXT, MD, DOCX e PDF con testo selezionabile.
+- **Scatta foto**: su smartphone apre normalmente la fotocamera posteriore.
+- Su computer il pulsante foto permette di scegliere un'immagine dal dispositivo.
+- La foto viene letta tramite OCR e il testo riconosciuto viene inserito automaticamente.
+- È possibile fotografare più pagine una dopo l'altra: il nuovo testo viene aggiunto in fondo.
+- OCR bilingue Italiano/English.
+- Stato di avanzamento percentuale durante il riconoscimento.
+
+### Privacy OCR
+Il riconoscimento è eseguito nel browser tramite Tesseract.js. Non è necessario un account.
+Al primo utilizzo è necessaria la connessione Internet per caricare il motore e i dati linguistici.
+
+### Limiti OCR
+La qualità dipende molto dalla foto. Funziona meglio con:
+- testo stampato;
+- scrittura molto chiara;
+- buona illuminazione;
+- foglio inquadrato frontalmente;
+- immagine non mossa.
+
+La scrittura corsiva può richiedere correzioni manuali dopo il riconoscimento.
+
+## Correzione V3.1
+Corretto anche il pulsante **Annulla** nella finestra “Nuovo studente”.
+Ora la finestra può essere chiusa senza attivare la validazione del campo obbligatorio.
