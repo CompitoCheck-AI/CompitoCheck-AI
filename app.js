@@ -1,0 +1,1023 @@
+
+(() => {
+  'use strict';
+
+  const STORAGE_KEY = 'compitocheck_ai_v1_students';
+  const $ = (id) => document.getElementById(id);
+
+  const els = {
+    studentSelect: $('studentSelect'),
+    newStudentBtn: $('newStudentBtn'),
+    deleteStudentBtn: $('deleteStudentBtn'),
+    studentInfo: $('studentInfo'),
+    referenceText: $('referenceText'),
+    saveReferenceBtn: $('saveReferenceBtn'),
+    saveAsReferenceBtn: $('saveAsReferenceBtn'),
+    manageReferencesBtn: $('manageReferencesBtn'),
+    referenceCount: $('referenceCount'),
+    languageSelect: $('languageSelect'),
+    fileInput: $('fileInput'),
+    fileName: $('fileName'),
+    essayText: $('essayText'),
+    analyzeBtn: $('analyzeBtn'),
+    clearBtn: $('clearBtn'),
+    validation: $('validation'),
+    results: $('results'),
+    detectedLanguage: $('detectedLanguage'),
+    aiScore: $('aiScore'),
+    aiMeter: $('aiMeter'),
+    styleScore: $('styleScore'),
+    styleMeter: $('styleMeter'),
+    cefrScore: $('cefrScore'),
+    signalsList: $('signalsList'),
+    gradingBox: $('gradingBox'),
+    highlightedText: $('highlightedText'),
+    correctionsList: $('correctionsList'),
+    questionsList: $('questionsList'),
+    statsTable: $('statsTable'),
+    reportText: $('reportText'),
+    exportBtn: $('exportBtn'),
+    studentDialog: $('studentDialog'),
+    studentForm: $('studentForm'),
+    studentName: $('studentName'),
+    confirmStudentBtn: $('confirmStudentBtn'),
+    referencesDialog: $('referencesDialog'),
+    referencesList: $('referencesList'),
+    closeReferencesBtn: $('closeReferencesBtn'),
+    installBtn: $('installBtn'),
+    classroomToggle: $('classroomToggle'),
+    classroomPanel: $('classroomPanel'),
+    startSessionBtn: $('startSessionBtn'),
+    pauseSessionBtn: $('pauseSessionBtn'),
+    finishSessionBtn: $('finishSessionBtn'),
+    resetSessionBtn: $('resetSessionBtn'),
+    sessionState: $('sessionState'),
+    sessionTimer: $('sessionTimer'),
+    typedChars: $('typedChars'),
+    pastedChars: $('pastedChars'),
+    deletedChars: $('deletedChars'),
+    longPauses: $('longPauses'),
+    typedPct: $('typedPct'),
+    pastedPct: $('pastedPct'),
+    typedPctMeter: $('typedPctMeter'),
+    pastedPctMeter: $('pastedPctMeter'),
+    pasteAssessment: $('pasteAssessment'),
+    eventTimeline: $('eventTimeline'),
+    exportSessionBtn: $('exportSessionBtn')
+  };
+
+  let students = loadStudents();
+  let lastAnalysis = null;
+  let deferredPrompt = null;
+
+  let classroom = {
+    state: 'idle',
+    startedAt: null,
+    elapsedBeforePause: 0,
+    pauseStartedAt: null,
+    timerId: null,
+    typedChars: 0,
+    pastedChars: 0,
+    deletedChars: 0,
+    longPauses: 0,
+    events: [],
+    lastInputAt: null,
+    lastValue: '',
+    pasteGuard: false
+  };
+
+  function loadStudents() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveStudents() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
+    renderStudentSelect();
+  renderClassroom();
+  }
+
+  function uid() {
+    return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+  }
+
+  function currentStudent() {
+    return students.find(s => s.id === els.studentSelect.value) || null;
+  }
+
+  function renderStudentSelect(preferredId) {
+    const current = preferredId || els.studentSelect.value;
+    els.studentSelect.innerHTML = '';
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = 'Nessuno studente selezionato';
+    els.studentSelect.appendChild(empty);
+    students.forEach(s => {
+      const o = document.createElement('option');
+      o.value = s.id;
+      o.textContent = s.name;
+      els.studentSelect.appendChild(o);
+    });
+    if (students.some(s => s.id === current)) els.studentSelect.value = current;
+    renderStudentInfo();
+  }
+
+  function renderStudentInfo() {
+    const s = currentStudent();
+    if (!s) {
+      els.studentInfo.textContent = 'Seleziona uno studente per usare il confronto stilistico.';
+      els.referenceCount.textContent = '0 campioni';
+      return;
+    }
+    const count = (s.references || []).length;
+    els.studentInfo.textContent = `${s.name} • ${count} campion${count === 1 ? 'e' : 'i'} salvati`;
+    els.referenceCount.textContent = `${count} campion${count === 1 ? 'e' : 'i'}`;
+  }
+
+  function addReference(text) {
+    const s = currentStudent();
+    if (!s) return showValidation('Seleziona o crea prima uno studente.');
+    const clean = normalizeText(text);
+    if (clean.length < 120) return showValidation('Il campione è troppo corto. Inserisci almeno circa 120 caratteri.');
+    s.references = s.references || [];
+    if (s.references.length >= 10) return showValidation('Hai raggiunto il limite di 10 campioni per questo studente.');
+    s.references.push({ id: uid(), text: clean, createdAt: new Date().toISOString() });
+    saveStudents();
+    els.referenceText.value = '';
+    showValidation('', false);
+  }
+
+  function showValidation(message, isError = true) {
+    els.validation.textContent = message;
+    els.validation.style.color = isError ? '#b42318' : '#067647';
+  }
+
+  function normalizeText(text) {
+    return (text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function splitSentences(text) {
+    const cleaned = normalizeText(text).replace(/\n+/g, ' ');
+    const parts = cleaned.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [];
+    return parts.map(s => s.trim()).filter(s => s.length > 2);
+  }
+
+  function words(text) {
+    return (text.toLowerCase().match(/[a-zà-öø-ÿ'’-]+/gi) || []).map(w => w.replace(/[’]/g, "'"));
+  }
+
+  function avg(arr) {
+    return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0;
+  }
+
+  function std(arr) {
+    if (arr.length < 2) return 0;
+    const m = avg(arr);
+    return Math.sqrt(avg(arr.map(x => (x-m)**2)));
+  }
+
+  function clamp(n, min, max) {
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function pct(n) {
+    return Math.round(clamp(n, 0, 100));
+  }
+
+  const stopIT = new Set('il lo la i gli le un uno una di a da in con su per tra fra e o ma che non come più si del dello della dei degli delle al allo alla ai agli alle nel nello nella nei negli nelle è sono era essere anche questo questa questi queste'.split(' '));
+  const stopEN = new Set('the a an and or but of to in on for with from by at as is are was were be been being that this these those it its he she they we you i not do does did have has had can could would should will may might'.split(' '));
+
+  function detectLanguage(text) {
+    const ws = words(text);
+    if (!ws.length) return 'it';
+    let it = 0, en = 0;
+    ws.forEach(w => {
+      if (stopIT.has(w)) it++;
+      if (stopEN.has(w)) en++;
+    });
+    const italianMarkers = (text.match(/[àèéìòù]/gi) || []).length;
+    it += italianMarkers * 1.8;
+    return en > it ? 'en' : 'it';
+  }
+
+  const transitions = {
+    it: ['inoltre','tuttavia','pertanto','in conclusione','in sintesi','d’altra parte','d\'altra parte','di conseguenza','in primo luogo','in secondo luogo','complessivamente','è importante sottolineare','alla luce di ciò','in definitiva'],
+    en: ['moreover','furthermore','however','therefore','in conclusion','in summary','on the other hand','consequently','firstly','secondly','overall','it is important to note','in light of this','ultimately','additionally']
+  };
+
+  const advancedEN = new Set('notwithstanding consequently moreover furthermore profound invaluable substantial compelling intricate comprehensive facilitate enhance demonstrate significant perspective sustainability socioeconomic nevertheless predominantly considerably arguably inherently increasingly implication paradigm multifaceted'.split(' '));
+
+  function basicStats(text, lang) {
+    const ss = splitSentences(text);
+    const ws = words(text);
+    const lengths = ss.map(s => words(s).length).filter(Boolean);
+    const unique = new Set(ws);
+    const stop = lang === 'en' ? stopEN : stopIT;
+    const contentWords = ws.filter(w => !stop.has(w) && w.length > 2);
+    const longWords = ws.filter(w => w.length >= 8).length;
+    const commas = (text.match(/,/g) || []).length;
+    const semicolons = (text.match(/;/g) || []).length;
+    const exclamations = (text.match(/!/g) || []).length;
+    const questions = (text.match(/\?/g) || []).length;
+    const paragraphs = normalizeText(text).split(/\n\s*\n/).filter(Boolean).length;
+    const firstPersonTokens = lang === 'en'
+      ? ws.filter(w => ['i','me','my','mine','we','us','our','ours'].includes(w)).length
+      : ws.filter(w => ['io','me','mio','mia','miei','mie','noi','nostro','nostra','nostri','nostre'].includes(w)).length;
+    const transCount = transitions[lang].reduce((n, t) => n + ((text.toLowerCase().match(new RegExp('\\b' + escapeRegex(t) + '\\b','g')) || []).length), 0);
+
+    return {
+      chars: text.length,
+      words: ws.length,
+      sentences: ss.length,
+      paragraphs,
+      avgSentence: avg(lengths),
+      sentenceStd: std(lengths),
+      lexicalDiversity: ws.length ? unique.size / ws.length : 0,
+      longWordRatio: ws.length ? longWords / ws.length : 0,
+      commaPerSentence: ss.length ? commas / ss.length : 0,
+      semicolons,
+      exclamations,
+      questions,
+      firstPersonRatio: ws.length ? firstPersonTokens / ws.length : 0,
+      transitionRatio: ss.length ? transCount / ss.length : 0,
+      contentWords
+    };
+  }
+
+  function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function repeatedNgramRate(text, n=3) {
+    const ws = words(text);
+    if (ws.length < n*2) return 0;
+    const map = new Map();
+    for (let i=0; i<=ws.length-n; i++) {
+      const gram = ws.slice(i,i+n).join(' ');
+      map.set(gram, (map.get(gram)||0)+1);
+    }
+    let repeated = 0;
+    for (const c of map.values()) if (c > 1) repeated += c-1;
+    return repeated / Math.max(1, ws.length-n+1);
+  }
+
+  function spellingSignals(text, lang) {
+    const issues = [];
+    if (lang === 'en') {
+      const rules = [
+        [/\bi am agree\b/gi, 'I agree', 'In inglese non si usa “am” con “agree”.'],
+        [/\bpeople is\b/gi, 'people are', '“People” richiede il verbo al plurale.'],
+        [/\bhe have\b/gi, 'he has', 'Alla terza persona singolare si usa “has”.'],
+        [/\bshe have\b/gi, 'she has', 'Alla terza persona singolare si usa “has”.'],
+        [/\byesterday\s+I\s+go\b/gi, 'yesterday I went', 'Con “yesterday” qui serve il past simple.'],
+        [/\bdid\s+\w+\s+\w+ed\b/gi, null, 'Dopo “did” il verbo principale normalmente torna alla forma base.'],
+        [/\bmore better\b/gi, 'better', '“Better” è già comparativo.'],
+        [/\badvices\b/gi, 'advice', '“Advice” è normalmente non numerabile.'],
+        [/\binformations\b/gi, 'information', '“Information” è non numerabile.']
+      ];
+      rules.forEach(([re, fixed, reason]) => {
+        const m = text.match(re);
+        if (m) issues.push({original:m[0], fixed:fixed || 'Controllare la forma verbale', reason});
+      });
+    } else {
+      const rules = [
+        [/\bqual'è\b/gi, "qual è", '“Qual è” si scrive senza apostrofo.'],
+        [/\bun pò\b/gi, "un po'", 'La forma corretta è “un po’”.'],
+        [/\bperchè\b/gi, 'perché', 'Nell’uso standard si scrive “perché”.'],
+        [/\bse stesso\b/gi, 'sé stesso', 'Il pronome tonico “sé” richiede l’accento.']
+      ];
+      rules.forEach(([re, fixed, reason]) => {
+        const m = text.match(re);
+        if (m) issues.push({original:m[0], fixed, reason});
+      });
+    }
+    return issues.slice(0,12);
+  }
+
+  function aiHeuristic(text, lang, stats) {
+    const signals = [];
+    let score = 18;
+
+    if (stats.words < 80) {
+      signals.push({level:'low', title:'Testo breve', desc:'Su testi molto brevi qualsiasi stima è particolarmente incerta.', weight:-5});
+      score -= 5;
+    }
+
+    if (stats.sentences >= 5 && stats.sentenceStd < 5.2) {
+      score += 15;
+      signals.push({level:'high', title:'Bassa variabilità delle frasi', desc:'Le frasi hanno lunghezze piuttosto uniformi, caratteristica che può comparire in testi molto regolari.', weight:15});
+    } else if (stats.sentenceStd < 8) {
+      score += 7;
+      signals.push({level:'mid', title:'Variabilità moderata delle frasi', desc:'La struttura delle frasi è abbastanza regolare.', weight:7});
+    } else {
+      signals.push({level:'low', title:'Buona variabilità delle frasi', desc:'La lunghezza delle frasi varia in modo naturale.', weight:-5});
+      score -= 5;
+    }
+
+    if (stats.transitionRatio > 0.22) {
+      score += 16;
+      signals.push({level:'high', title:'Molti connettivi formali', desc:'Il testo usa frequentemente formule di raccordo tipiche della prosa strutturata.', weight:16});
+    } else if (stats.transitionRatio > 0.10) {
+      score += 7;
+      signals.push({level:'mid', title:'Connettivi presenti', desc:'Il testo presenta una discreta densità di connettivi logici.', weight:7});
+    }
+
+    if (stats.lexicalDiversity > 0.58 && stats.words > 120) {
+      score += 8;
+      signals.push({level:'mid', title:'Lessico molto vario', desc:'La varietà lessicale è elevata rispetto alla lunghezza del testo.', weight:8});
+    }
+
+    if (stats.firstPersonRatio < 0.005 && stats.words > 130) {
+      score += 7;
+      signals.push({level:'mid', title:'Voce personale poco presente', desc:'Il testo contiene pochissimi riferimenti in prima persona.', weight:7});
+    }
+
+    const rep = repeatedNgramRate(text, 3);
+    if (rep < 0.012 && stats.words > 150) {
+      score += 6;
+      signals.push({level:'mid', title:'Poche ripetizioni locali', desc:'La prosa evita quasi del tutto ripetizioni di sequenze di parole.', weight:6});
+    } else if (rep > 0.04) {
+      score -= 4;
+      signals.push({level:'low', title:'Ripetizioni presenti', desc:'Sono presenti ripetizioni che rendono il testo meno uniformemente rifinito.', weight:-4});
+    }
+
+    if (stats.longWordRatio > 0.16) {
+      score += 8;
+      signals.push({level:'mid', title:'Vocabolario complesso', desc:'È presente una quota alta di parole lunghe o formali.', weight:8});
+    }
+
+    if (lang === 'en') {
+      const ws = words(text);
+      const adv = ws.filter(w => advancedEN.has(w)).length;
+      const ratio = ws.length ? adv/ws.length : 0;
+      if (ratio > .025) {
+        score += 9;
+        signals.push({level:'high', title:'Lessico inglese avanzato', desc:'Diverse parole appartengono a un registro accademico o avanzato.', weight:9});
+      }
+    }
+
+    const corrections = spellingSignals(text, lang);
+    if (corrections.length === 0 && stats.words > 180) {
+      score += 5;
+      signals.push({level:'mid', title:'Nessun errore semplice rilevato', desc:'Il controllo euristico non ha trovato alcuni errori scolastici comuni. Non significa che il testo sia privo di errori.', weight:5});
+    }
+
+    const suspiciousSentences = scoreSuspiciousSentences(text, lang);
+    score += Math.min(8, suspiciousSentences.filter(x => x.score >= 2).length * 1.5);
+
+    return {score:pct(score), signals, suspiciousSentences, corrections};
+  }
+
+  function scoreSuspiciousSentences(text, lang) {
+    const ss = splitSentences(text);
+    const trans = transitions[lang];
+    return ss.map((sentence, index) => {
+      const ws = words(sentence);
+      let s = 0;
+      const low = sentence.toLowerCase();
+      if (ws.length >= 24) s++;
+      if (ws.length >= 34) s++;
+      if (trans.some(t => low.includes(t))) s++;
+      if ((sentence.match(/,/g)||[]).length >= 3) s++;
+      if (lang === 'en' && ws.filter(w => advancedEN.has(w)).length >= 2) s++;
+      if (lang === 'it' && /\b(complessivamente|pertanto|inoltre|tuttavia|significativamente|fondamentale|evidenzia|sottolineare)\b/i.test(sentence)) s++;
+      return {sentence, score:s, index};
+    });
+  }
+
+  function styleVector(stats) {
+    return [
+      stats.avgSentence,
+      stats.sentenceStd,
+      stats.lexicalDiversity * 100,
+      stats.longWordRatio * 100,
+      stats.commaPerSentence,
+      stats.firstPersonRatio * 100,
+      stats.transitionRatio * 100
+    ];
+  }
+
+  function styleSimilarity(text, lang, references) {
+    if (!references || references.length === 0) return null;
+    const cur = styleVector(basicStats(text, lang));
+    const vectors = references.map(r => styleVector(basicStats(r.text, detectLanguage(r.text))));
+    const mean = cur.map((_,i) => avg(vectors.map(v => v[i])));
+    const scales = [12, 9, 20, 10, 1.5, 4, 20];
+    const dist = Math.sqrt(avg(cur.map((v,i) => ((v-mean[i])/scales[i])**2)));
+    return pct(100 * Math.exp(-1.25 * dist));
+  }
+
+  function estimateCEFR(text, stats) {
+    const ws = words(text);
+    if (!ws.length) return '—';
+    const adv = ws.filter(w => advancedEN.has(w)).length / ws.length;
+    let p = 0;
+    if (stats.avgSentence > 10) p++;
+    if (stats.avgSentence > 16) p++;
+    if (stats.avgSentence > 23) p++;
+    if (stats.lexicalDiversity > .48) p++;
+    if (stats.lexicalDiversity > .62) p++;
+    if (stats.longWordRatio > .10) p++;
+    if (stats.longWordRatio > .17) p++;
+    if (adv > .008) p++;
+    if (adv > .025) p++;
+    if (stats.transitionRatio > .08) p++;
+    if (p <= 2) return 'A2';
+    if (p <= 4) return 'B1';
+    if (p <= 7) return 'B2';
+    return 'C1';
+  }
+
+  function gradeText(text, lang, stats, corrections) {
+    const lengthScore = clamp(stats.words / 220 * 10, 4, 10);
+    const coherence = clamp(6 + Math.min(2, stats.transitionRatio*8) + Math.min(1.5, stats.paragraphs/4) - (stats.sentences < 3 ? 2:0), 4, 10);
+    const vocabulary = clamp(5 + stats.lexicalDiversity*4 + stats.longWordRatio*6, 4, 10);
+    const grammar = clamp(9 - corrections.length*0.7, 4, 10);
+    const structure = clamp(5.5 + Math.min(2, stats.paragraphs*0.7) + Math.min(2, stats.sentences/7), 4, 10);
+    const overall = avg([lengthScore, coherence, vocabulary, grammar, structure]);
+    return {
+      grammatica: grammar,
+      lessico: vocabulary,
+      coerenza: coherence,
+      struttura: structure,
+      completezza: lengthScore,
+      voto: overall
+    };
+  }
+
+  function questionGenerator(text, lang, suspicious) {
+    const candidates = suspicious.filter(x=>x.score>=2).slice(0,3);
+    const ss = splitSentences(text);
+    while (candidates.length < 3 && ss[candidates.length]) {
+      const idx = Math.floor((candidates.length+1)*ss.length/4);
+      candidates.push({sentence:ss[Math.min(idx, ss.length-1)],score:0});
+    }
+    const out = [];
+    candidates.slice(0,3).forEach((x, i) => {
+      const excerpt = x.sentence.length > 130 ? x.sentence.slice(0,127)+'…' : x.sentence;
+      if (lang === 'en') {
+        const templates = [
+          `Explain in your own words what you mean by: “${excerpt}”`,
+          `Rewrite this idea using simpler English: “${excerpt}”`,
+          `Give a concrete example that supports this statement: “${excerpt}”`
+        ];
+        out.push(templates[i % templates.length]);
+      } else {
+        const templates = [
+          `Spiega con parole tue cosa intendi quando scrivi: “${excerpt}”`,
+          `Riformula in modo più semplice questa idea: “${excerpt}”`,
+          `Fai un esempio concreto che dimostri questa affermazione: “${excerpt}”`
+        ];
+        out.push(templates[i % templates.length]);
+      }
+    });
+    return out;
+  }
+
+  function analyze() {
+    showValidation('', false);
+    const text = normalizeText(els.essayText.value);
+    if (text.length < 120) return showValidation('Inserisci un testo più lungo: servono almeno circa 120 caratteri per un’analisi utile.');
+    const selectedLang = els.languageSelect.value;
+    const lang = selectedLang === 'auto' ? detectLanguage(text) : selectedLang;
+    const stats = basicStats(text, lang);
+    const ai = aiHeuristic(text, lang, stats);
+    const student = currentStudent();
+    const similarity = student ? styleSimilarity(text, lang, student.references || []) : null;
+    const cefr = lang === 'en' ? estimateCEFR(text, stats) : 'N/D';
+    const grades = gradeText(text, lang, stats, ai.corrections);
+    const questions = questionGenerator(text, lang, ai.suspiciousSentences);
+
+    lastAnalysis = {text, lang, stats, ai, similarity, cefr, grades, questions, studentName: student?.name || 'Non selezionato', createdAt:new Date().toLocaleString('it-IT')};
+    renderAnalysis(lastAnalysis);
+  }
+
+  function renderAnalysis(a) {
+    els.results.hidden = false;
+    els.detectedLanguage.textContent = a.lang === 'en' ? 'English' : 'Italiano';
+    els.aiScore.textContent = `${a.ai.score}%`;
+    els.aiMeter.style.width = `${a.ai.score}%`;
+    els.styleScore.textContent = a.similarity === null ? 'N/D' : `${a.similarity}%`;
+    els.styleMeter.style.width = `${a.similarity ?? 0}%`;
+    els.cefrScore.textContent = a.cefr;
+
+    els.signalsList.innerHTML = '';
+    a.ai.signals.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'signal';
+      const badgeClass = s.level === 'high' ? 'high' : s.level === 'mid' ? 'mid' : 'low';
+      const badgeText = s.level === 'high' ? 'Forte' : s.level === 'mid' ? 'Moderato' : 'Debole';
+      div.innerHTML = `<div class="title"><span>${escapeHtml(s.title)}</span><span class="badge ${badgeClass}">${badgeText}</span></div><div class="desc">${escapeHtml(s.desc)}</div>`;
+      els.signalsList.appendChild(div);
+    });
+    if (a.similarity !== null && a.similarity < 45) {
+      const div = document.createElement('div');
+      div.className = 'signal';
+      div.innerHTML = `<div class="title"><span>Scostamento dallo stile storico</span><span class="badge high">Da verificare</span></div><div class="desc">Il profilo linguistico del testo è poco compatibile con i campioni salvati dello studente.</div>`;
+      els.signalsList.prepend(div);
+    }
+
+    const labels = {
+      grammatica: a.lang === 'en' ? 'Grammar' : 'Grammatica',
+      lessico: a.lang === 'en' ? 'Vocabulary' : 'Lessico',
+      coerenza: a.lang === 'en' ? 'Coherence' : 'Coerenza',
+      struttura: a.lang === 'en' ? 'Structure' : 'Struttura',
+      completezza: a.lang === 'en' ? 'Task development' : 'Sviluppo',
+      voto: a.lang === 'en' ? 'Suggested grade' : 'Voto indicativo'
+    };
+    els.gradingBox.innerHTML = Object.entries(a.grades).map(([k,v]) =>
+      `<div class="grade-line"><span>${labels[k]}</span><strong>${v.toFixed(1)}/10</strong></div>`
+    ).join('');
+
+    renderHighlighted(a.text, a.ai.suspiciousSentences);
+
+    els.correctionsList.innerHTML = '';
+    if (!a.ai.corrections.length) {
+      els.correctionsList.innerHTML = '<p class="muted small">Nessuna delle regole di correzione di base ha rilevato errori. La V1 non sostituisce un correttore grammaticale completo.</p>';
+    } else {
+      a.ai.corrections.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'correction';
+        div.innerHTML = `<div><span class="original">${escapeHtml(c.original)}</span> → <span class="fixed">${escapeHtml(c.fixed)}</span></div><div class="muted small">${escapeHtml(c.reason)}</div>`;
+        els.correctionsList.appendChild(div);
+      });
+    }
+
+    els.questionsList.innerHTML = '';
+    a.questions.forEach(q => {
+      const li = document.createElement('li');
+      li.textContent = q;
+      els.questionsList.appendChild(li);
+    });
+
+    const statItems = [
+      ['Parole', a.stats.words],
+      ['Frasi', a.stats.sentences],
+      ['Paragrafi', a.stats.paragraphs],
+      ['Parole/frase', a.stats.avgSentence.toFixed(1)],
+      ['Variabilità frasi', a.stats.sentenceStd.toFixed(1)],
+      ['Diversità lessicale', Math.round(a.stats.lexicalDiversity*100)+'%'],
+      ['Parole lunghe', Math.round(a.stats.longWordRatio*100)+'%'],
+      ['Connettivi/frase', a.stats.transitionRatio.toFixed(2)]
+    ];
+    els.statsTable.innerHTML = statItems.map(([k,v]) => `<div class="stat"><span>${escapeHtml(k)}</span><strong>${escapeHtml(String(v))}</strong></div>`).join('');
+
+    els.reportText.value = buildReport(a);
+    els.results.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  function renderHighlighted(text, suspicious) {
+    const sentenceMap = new Map(suspicious.map(x => [x.sentence, x.score]));
+    const ss = splitSentences(text);
+    els.highlightedText.innerHTML = ss.map(s => {
+      const score = sentenceMap.get(s) || 0;
+      const cls = score >= 3 ? 'suspect-high' : score >= 2 ? 'suspect-mid' : '';
+      return cls ? `<span class="${cls}" title="Passaggio da verificare">${escapeHtml(s)}</span>` : escapeHtml(s);
+    }).join(' ');
+  }
+
+  function buildReport(a) {
+    const lines = [];
+    lines.push('COMPITOCHECK AI — REPORT DI SUPPORTO');
+    lines.push('===================================');
+    lines.push(`Data: ${a.createdAt}`);
+    lines.push(`Studente: ${a.studentName}`);
+    lines.push(`Lingua: ${a.lang === 'en' ? 'English' : 'Italiano'}`);
+    lines.push(`Indicatore IA: ${a.ai.score}%`);
+    lines.push(`Compatibilità con stile storico: ${a.similarity === null ? 'N/D' : a.similarity + '%'}`);
+    if (a.lang === 'en') lines.push(`Livello inglese stimato: ${a.cefr}`);
+    lines.push('');
+    lines.push('VALUTAZIONE DIDATTICA');
+    lines.push(`Grammatica: ${a.grades.grammatica.toFixed(1)}/10`);
+    lines.push(`Lessico: ${a.grades.lessico.toFixed(1)}/10`);
+    lines.push(`Coerenza: ${a.grades.coerenza.toFixed(1)}/10`);
+    lines.push(`Struttura: ${a.grades.struttura.toFixed(1)}/10`);
+    lines.push(`Sviluppo: ${a.grades.completezza.toFixed(1)}/10`);
+    lines.push(`Voto indicativo: ${a.grades.voto.toFixed(1)}/10`);
+    lines.push('');
+    lines.push('INDICATORI');
+    a.ai.signals.forEach(s => lines.push(`- ${s.title}: ${s.desc}`));
+    lines.push('');
+    lines.push('DOMANDE PER VERIFICA ORALE');
+    a.questions.forEach((q,i)=>lines.push(`${i+1}. ${q}`));
+    lines.push('');
+    lines.push('AVVERTENZA');
+    lines.push('L’indicatore IA è euristico e non dimostra che un testo sia stato generato da un sistema di intelligenza artificiale. Deve essere usato insieme ad altri elementi didattici.');
+    return lines.join('\n');
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+  }
+
+  async function handleFile(file) {
+    if (!file) return;
+    els.fileName.textContent = file.name;
+    const ext = file.name.toLowerCase().split('.').pop();
+    showValidation('Caricamento file...', false);
+    try {
+      if (ext === 'txt' || ext === 'md') {
+        els.essayText.value = await file.text();
+      } else if (ext === 'docx') {
+        if (!window.mammoth) throw new Error('Modulo DOCX non disponibile. Controlla la connessione Internet.');
+        const buffer = await file.arrayBuffer();
+        const result = await window.mammoth.extractRawText({arrayBuffer:buffer});
+        els.essayText.value = result.value;
+      } else if (ext === 'pdf') {
+        if (!window.pdfjsLib) throw new Error('Modulo PDF non disponibile. Riprova tra qualche secondo o controlla la connessione.');
+        const data = new Uint8Array(await file.arrayBuffer());
+        const pdf = await window.pdfjsLib.getDocument({data}).promise;
+        let text = '';
+        const maxPages = Math.min(pdf.numPages, 50);
+        for (let p=1; p<=maxPages; p++) {
+          const page = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          text += content.items.map(i=>i.str).join(' ') + '\n\n';
+        }
+        els.essayText.value = text.trim();
+      } else {
+        throw new Error('Formato non supportato.');
+      }
+      showValidation('File caricato correttamente.', false);
+    } catch (err) {
+      showValidation(err.message || 'Impossibile leggere il file.');
+    }
+  }
+
+  function renderReferences() {
+    const s = currentStudent();
+    els.referencesList.innerHTML = '';
+    if (!s || !s.references?.length) {
+      els.referencesList.innerHTML = '<p class="muted">Nessun campione salvato.</p>';
+      return;
+    }
+    s.references.forEach((r, idx) => {
+      const div = document.createElement('div');
+      div.className = 'ref-item';
+      div.innerHTML = `<div class="ref-head"><strong>Campione ${idx+1}</strong><button class="btn danger-outline" data-remove="${r.id}">Elimina</button></div><p>${escapeHtml(r.text.slice(0,550))}${r.text.length>550?'…':''}</p>`;
+      els.referencesList.appendChild(div);
+    });
+    els.referencesList.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s2 = currentStudent();
+        if (!s2) return;
+        s2.references = s2.references.filter(r => r.id !== btn.dataset.remove);
+        saveStudents();
+        renderReferences();
+      });
+    });
+  }
+
+
+  function nowMs() { return Date.now(); }
+
+  function formatElapsed(ms) {
+    const sec = Math.max(0, Math.floor(ms / 1000));
+    const m = String(Math.floor(sec / 60)).padStart(2,'0');
+    const s = String(sec % 60).padStart(2,'0');
+    return `${m}:${s}`;
+  }
+
+  function sessionElapsed() {
+    if (!classroom.startedAt) return 0;
+    if (classroom.state === 'running') return classroom.elapsedBeforePause + (nowMs() - classroom.startedAt);
+    return classroom.elapsedBeforePause;
+  }
+
+  function addClassroomEvent(type, message, extra = {}) {
+    const event = {
+      type,
+      message,
+      at: new Date().toISOString(),
+      elapsed: sessionElapsed(),
+      ...extra
+    };
+    classroom.events.push(event);
+    if (classroom.events.length > 250) classroom.events.shift();
+    renderClassroom();
+  }
+
+  function setSessionState(state) {
+    classroom.state = state;
+    els.sessionState.className = `status-dot ${state === 'running' ? 'running' : state === 'paused' ? 'paused' : state === 'finished' ? 'finished' : 'idle'}`;
+    els.sessionState.textContent =
+      state === 'running' ? 'Sessione in corso' :
+      state === 'paused' ? 'Sessione in pausa' :
+      state === 'finished' ? 'Sessione terminata' : 'Non avviata';
+
+    els.startSessionBtn.disabled = state === 'running' || state === 'paused';
+    els.pauseSessionBtn.disabled = !(state === 'running' || state === 'paused');
+    els.pauseSessionBtn.textContent = state === 'paused' ? 'Riprendi' : 'Pausa';
+    els.finishSessionBtn.disabled = !(state === 'running' || state === 'paused');
+    els.exportSessionBtn.disabled = classroom.events.length === 0;
+  }
+
+  function startSession() {
+    if (classroom.state === 'running' || classroom.state === 'paused') return;
+    classroom = {
+      state: 'running',
+      startedAt: nowMs(),
+      elapsedBeforePause: 0,
+      pauseStartedAt: null,
+      timerId: classroom.timerId,
+      typedChars: 0,
+      pastedChars: 0,
+      deletedChars: 0,
+      longPauses: 0,
+      events: [],
+      lastInputAt: nowMs(),
+      lastValue: els.essayText.value || '',
+      pasteGuard: false
+    };
+    setSessionState('running');
+    addClassroomEvent('start', 'Sessione avviata');
+    clearInterval(classroom.timerId);
+    classroom.timerId = setInterval(() => {
+      if (classroom.state === 'running') els.sessionTimer.textContent = formatElapsed(sessionElapsed());
+    }, 1000);
+    renderClassroom();
+  }
+
+  function togglePauseSession() {
+    if (classroom.state === 'running') {
+      classroom.elapsedBeforePause += nowMs() - classroom.startedAt;
+      classroom.startedAt = null;
+      classroom.state = 'paused';
+      addClassroomEvent('pause', 'Sessione messa in pausa');
+      setSessionState('paused');
+    } else if (classroom.state === 'paused') {
+      classroom.startedAt = nowMs();
+      classroom.lastInputAt = nowMs();
+      classroom.state = 'running';
+      addClassroomEvent('resume', 'Sessione ripresa');
+      setSessionState('running');
+    }
+    renderClassroom();
+  }
+
+  function finishSession() {
+    if (classroom.state === 'running') {
+      classroom.elapsedBeforePause += nowMs() - classroom.startedAt;
+      classroom.startedAt = null;
+    }
+    if (classroom.state === 'running' || classroom.state === 'paused') {
+      classroom.state = 'finished';
+      addClassroomEvent('finish', 'Sessione terminata');
+      setSessionState('finished');
+      clearInterval(classroom.timerId);
+      classroom.timerId = null;
+      renderClassroom();
+    }
+  }
+
+  function resetSession() {
+    clearInterval(classroom.timerId);
+    classroom = {
+      state:'idle', startedAt:null, elapsedBeforePause:0, pauseStartedAt:null, timerId:null,
+      typedChars:0, pastedChars:0, deletedChars:0, longPauses:0, events:[],
+      lastInputAt:null, lastValue:els.essayText.value || '', pasteGuard:false
+    };
+    setSessionState('idle');
+    renderClassroom();
+  }
+
+  function recordLongPauseIfNeeded() {
+    if (classroom.state !== 'running' || !classroom.lastInputAt) return;
+    const gap = nowMs() - classroom.lastInputAt;
+    if (gap >= 20000) {
+      classroom.longPauses++;
+      addClassroomEvent('pause', `Pausa di ${Math.round(gap/1000)} secondi prima della ripresa`);
+    }
+  }
+
+  function onEssayBeforeInput(e) {
+    if (classroom.state !== 'running') return;
+    recordLongPauseIfNeeded();
+
+    const type = e.inputType || '';
+    if (type.startsWith('delete')) {
+      const selectionLen = Math.max(0, els.essayText.selectionEnd - els.essayText.selectionStart);
+      classroom.deletedChars += Math.max(1, selectionLen);
+    }
+    classroom.lastInputAt = nowMs();
+  }
+
+  function onEssayInput(e) {
+    if (classroom.state !== 'running') return;
+    const current = els.essayText.value;
+    const prev = classroom.lastValue || '';
+    const delta = current.length - prev.length;
+
+    if (!classroom.pasteGuard && delta > 0) {
+      classroom.typedChars += delta;
+      if (delta >= 80) {
+        addClassroomEvent('burst', `Inserimento rapido di ${delta} caratteri`);
+      }
+    }
+    classroom.lastValue = current;
+    classroom.lastInputAt = nowMs();
+    classroom.pasteGuard = false;
+    renderClassroom();
+  }
+
+  function onEssayPaste(e) {
+    if (classroom.state !== 'running') return;
+    recordLongPauseIfNeeded();
+    const pasted = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+    const len = pasted.length;
+    classroom.pastedChars += len;
+    classroom.pasteGuard = true;
+    classroom.lastInputAt = nowMs();
+    addClassroomEvent('paste', `Incollati ${len} caratteri`, {chars:len});
+    setTimeout(() => {
+      classroom.lastValue = els.essayText.value;
+      classroom.pasteGuard = false;
+      renderClassroom();
+    }, 0);
+  }
+
+  function renderClassroom() {
+    if (!els.classroomPanel) return;
+    els.classroomPanel.hidden = !els.classroomToggle.checked;
+    setSessionState(classroom.state);
+    els.sessionTimer.textContent = formatElapsed(sessionElapsed());
+    els.typedChars.textContent = classroom.typedChars;
+    els.pastedChars.textContent = classroom.pastedChars;
+    els.deletedChars.textContent = classroom.deletedChars;
+    els.longPauses.textContent = classroom.longPauses;
+
+    const total = classroom.typedChars + classroom.pastedChars;
+    const tp = total ? Math.round(classroom.typedChars / total * 100) : 0;
+    const pp = total ? 100 - tp : 0;
+    els.typedPct.textContent = `${tp}%`;
+    els.pastedPct.textContent = `${pp}%`;
+    els.typedPctMeter.style.width = `${tp}%`;
+    els.pastedPctMeter.style.width = `${pp}%`;
+
+    if (!total) {
+      els.pasteAssessment.textContent = 'Nessun dato di scrittura ancora disponibile.';
+    } else if (pp >= 60) {
+      els.pasteAssessment.textContent = 'Quota di testo incollato molto elevata: verificare l’origine del contenuto.';
+    } else if (pp >= 25) {
+      els.pasteAssessment.textContent = 'È presente una quota significativa di testo incollato.';
+    } else if (pp > 0) {
+      els.pasteAssessment.textContent = 'Sono stati rilevati alcuni incolla, ma la maggior parte del testo risulta digitata.';
+    } else {
+      els.pasteAssessment.textContent = 'Nessun testo incollato rilevato durante la sessione.';
+    }
+
+    if (!classroom.events.length) {
+      els.eventTimeline.innerHTML = '<div class="timeline-empty">La cronologia comparirà qui durante la sessione.</div>';
+    } else {
+      els.eventTimeline.innerHTML = classroom.events.slice().reverse().map(ev => {
+        const cls = ev.type === 'paste' ? 'paste' : ev.type === 'pause' ? 'pause' : '';
+        return `<div class="timeline-item ${cls}">
+          <span class="timeline-time">${formatElapsed(ev.elapsed)}</span>
+          <span class="timeline-text">${escapeHtml(ev.message)}</span>
+        </div>`;
+      }).join('');
+    }
+    els.exportSessionBtn.disabled = classroom.events.length === 0;
+  }
+
+  function exportSession() {
+    if (!classroom.events.length) return;
+    const student = currentStudent()?.name || 'studente';
+    const total = classroom.typedChars + classroom.pastedChars;
+    const typedPct = total ? Math.round(classroom.typedChars/total*100) : 0;
+    const pastedPct = total ? 100-typedPct : 0;
+
+    const lines = [
+      'COMPITOCHECK AI — CRONOLOGIA COMPITO IN CLASSE',
+      '==============================================',
+      `Studente: ${student}`,
+      `Durata: ${formatElapsed(sessionElapsed())}`,
+      `Caratteri digitati: ${classroom.typedChars}`,
+      `Caratteri incollati: ${classroom.pastedChars}`,
+      `Percentuale digitata: ${typedPct}%`,
+      `Percentuale incollata: ${pastedPct}%`,
+      `Cancellazioni stimate: ${classroom.deletedChars}`,
+      `Pause oltre 20 secondi: ${classroom.longPauses}`,
+      '',
+      'CRONOLOGIA'
+    ];
+    classroom.events.forEach(ev => lines.push(`${formatElapsed(ev.elapsed)} — ${ev.message}`));
+    lines.push('', 'NOTA: la cronologia documenta il processo di scrittura ma, da sola, non dimostra l’uso di strumenti di intelligenza artificiale.');
+
+    const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `compitocheck-sessione-${student.toLowerCase().replace(/[^a-z0-9à-ÿ]+/gi,'-') || 'studente'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+
+  function exportReport() {
+    if (!lastAnalysis) return;
+    const student = currentStudent()?.name || 'studente';
+    const safe = student.toLowerCase().replace(/[^a-z0-9à-ÿ]+/gi,'-').replace(/^-|-$/g,'') || 'studente';
+    const blob = new Blob([els.reportText.value], {type:'text/plain;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `compitocheck-${safe}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  els.newStudentBtn.addEventListener('click', () => {
+    els.studentName.value = '';
+    els.studentDialog.showModal();
+    setTimeout(()=>els.studentName.focus(),30);
+  });
+
+  els.studentForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = els.studentName.value.trim();
+    if (!name) return;
+    const s = {id:uid(), name, references:[], createdAt:new Date().toISOString()};
+    students.push(s);
+    saveStudents();
+    renderStudentSelect(s.id);
+    els.studentDialog.close();
+  });
+
+  els.deleteStudentBtn.addEventListener('click', () => {
+    const s = currentStudent();
+    if (!s) return showValidation('Nessuno studente selezionato.');
+    if (!confirm(`Eliminare "${s.name}" e tutti i suoi campioni?`)) return;
+    students = students.filter(x => x.id !== s.id);
+    saveStudents();
+    renderStudentSelect();
+  renderClassroom();
+  });
+
+  els.studentSelect.addEventListener('change', renderStudentInfo);
+  els.saveReferenceBtn.addEventListener('click', () => addReference(els.referenceText.value));
+  els.saveAsReferenceBtn.addEventListener('click', () => addReference(els.essayText.value));
+  els.manageReferencesBtn.addEventListener('click', () => {
+    renderReferences();
+    els.referencesDialog.showModal();
+  });
+  els.closeReferencesBtn.addEventListener('click', () => els.referencesDialog.close());
+  els.fileInput.addEventListener('change', () => handleFile(els.fileInput.files?.[0]));
+  els.analyzeBtn.addEventListener('click', analyze);
+  els.clearBtn.addEventListener('click', () => {
+    els.essayText.value = '';
+    els.fileInput.value = '';
+    els.fileName.textContent = 'Nessun file caricato';
+    els.results.hidden = true;
+    lastAnalysis = null;
+    showValidation('', false);
+  });
+  els.exportBtn.addEventListener('click', exportReport);
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    els.installBtn.hidden = false;
+  });
+  els.installBtn.addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    els.installBtn.hidden = true;
+  });
+
+
+  els.classroomToggle.addEventListener('change', () => {
+    els.classroomPanel.hidden = !els.classroomToggle.checked;
+    renderClassroom();
+  });
+  els.startSessionBtn.addEventListener('click', startSession);
+  els.pauseSessionBtn.addEventListener('click', togglePauseSession);
+  els.finishSessionBtn.addEventListener('click', finishSession);
+  els.resetSessionBtn.addEventListener('click', () => {
+    if (classroom.events.length && !confirm('Azzerare tutta la cronologia della sessione?')) return;
+    resetSession();
+  });
+  els.exportSessionBtn.addEventListener('click', exportSession);
+
+  els.essayText.addEventListener('beforeinput', onEssayBeforeInput);
+  els.essayText.addEventListener('input', onEssayInput);
+  els.essayText.addEventListener('paste', onEssayPaste);
+
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+  }
+
+  renderStudentSelect();
+  renderClassroom();
+})();

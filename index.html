@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="CompitoCheck AI - supporto alla correzione e analisi stilistica di elaborati in italiano e inglese." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>CompitoCheck AI</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">CC</div>
+      <div>
+        <h1>CompitoCheck AI</h1>
+        <p>Supporto alla correzione • Italiano / English</p>
+      </div>
+    </div>
+    <button id="installBtn" class="btn ghost" hidden>Installa app</button>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="card">
+        <h2>Studente</h2>
+        <label for="studentSelect">Archivio studenti</label>
+        <select id="studentSelect"></select>
+        <div class="row">
+          <button id="newStudentBtn" class="btn">+ Nuovo</button>
+          <button id="deleteStudentBtn" class="btn danger-outline">Elimina</button>
+        </div>
+        <div id="studentInfo" class="muted small"></div>
+      </section>
+
+      <section class="card">
+        <h2>Profilo stilistico</h2>
+        <p class="muted small">Salva 2–5 elaborati autentici per confrontare il nuovo compito con lo stile abituale.</p>
+        <textarea id="referenceText" rows="7" placeholder="Incolla qui un vecchio compito sicuramente scritto dallo studente..."></textarea>
+        <div class="row">
+          <button id="saveReferenceBtn" class="btn">Salva campione</button>
+          <button id="manageReferencesBtn" class="btn ghost">Gestisci</button>
+        </div>
+        <div id="referenceCount" class="pill">0 campioni</div>
+      </section>
+
+      <section class="card warning">
+        <h2>Uso corretto</h2>
+        <p class="small">Il risultato è un <strong>indicatore</strong>, non una prova. Un testo può sembrare “da IA” anche se scritto da una persona, e viceversa. Usa confronto stilistico, processo di scrittura e verifica orale prima di trarre conclusioni.</p>
+      </section>
+    </aside>
+
+    <section class="content">
+      <section class="card hero">
+        <div class="hero-head">
+          <div>
+            <h2>Analizza un compito</h2>
+            <p class="muted">Incolla il testo oppure carica TXT, MD, DOCX o PDF.</p>
+          </div>
+          <div class="lang-box">
+            <label for="languageSelect">Lingua</label>
+            <select id="languageSelect">
+              <option value="auto">Rileva automaticamente</option>
+              <option value="it">Italiano</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="file-row">
+          <label class="file-label">
+            <input id="fileInput" type="file" accept=".txt,.md,.docx,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+            <span>Carica file</span>
+          </label>
+          <span id="fileName" class="muted small">Nessun file caricato</span>
+        </div>
+
+        <textarea id="essayText" class="essay" rows="18" placeholder="Incolla qui il compito dello studente..."></textarea>
+
+        <div class="actions">
+          <button id="analyzeBtn" class="btn primary">Analizza compito</button>
+          <button id="saveAsReferenceBtn" class="btn">Salva come campione</button>
+          <button id="clearBtn" class="btn ghost">Pulisci</button>
+        </div>
+        <div id="validation" class="validation" aria-live="polite"></div>
+      </section>
+
+
+      <section class="card classroom-card">
+        <div class="section-head">
+          <div>
+            <h2>Modalità “Compito in classe”</h2>
+            <p class="muted">Registra il processo di scrittura: digitazione, cancellazioni, pause e testo incollato.</p>
+          </div>
+          <label class="switch-wrap">
+            <input id="classroomToggle" type="checkbox" />
+            <span>Attiva</span>
+          </label>
+        </div>
+
+        <div id="classroomPanel" hidden>
+          <div class="classroom-actions">
+            <button id="startSessionBtn" class="btn primary">Avvia sessione</button>
+            <button id="pauseSessionBtn" class="btn" disabled>Pausa</button>
+            <button id="finishSessionBtn" class="btn danger-outline" disabled>Termina sessione</button>
+            <button id="resetSessionBtn" class="btn ghost">Azzera sessione</button>
+          </div>
+
+          <div class="session-status">
+            <span id="sessionState" class="status-dot idle">Non avviata</span>
+            <span id="sessionTimer" class="pill">00:00</span>
+          </div>
+
+          <div class="grid metrics classroom-metrics">
+            <article class="metric-card">
+              <span class="metric-label">Caratteri digitati</span>
+              <strong id="typedChars">0</strong>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Caratteri incollati</span>
+              <strong id="pastedChars">0</strong>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Cancellazioni</span>
+              <strong id="deletedChars">0</strong>
+            </article>
+            <article class="metric-card">
+              <span class="metric-label">Pause &gt; 20 sec</span>
+              <strong id="longPauses">0</strong>
+            </article>
+          </div>
+
+          <div class="grid two">
+            <section class="card inner-card">
+              <h3>Origine del testo</h3>
+              <div class="origin-bars">
+                <div>
+                  <div class="bar-label"><span>Digitato</span><strong id="typedPct">0%</strong></div>
+                  <div class="meter"><span id="typedPctMeter"></span></div>
+                </div>
+                <div>
+                  <div class="bar-label"><span>Incollato</span><strong id="pastedPct">0%</strong></div>
+                  <div class="meter danger-meter"><span id="pastedPctMeter"></span></div>
+                </div>
+              </div>
+              <p id="pasteAssessment" class="muted small">Nessuna sessione attiva.</p>
+            </section>
+
+            <section class="card inner-card">
+              <h3>Cronologia</h3>
+              <div id="eventTimeline" class="timeline" aria-live="polite"></div>
+            </section>
+          </div>
+
+          <div class="actions">
+            <button id="exportSessionBtn" class="btn" disabled>Esporta cronologia TXT</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="results" class="results" hidden>
+        <div class="grid metrics">
+          <article class="metric-card">
+            <span class="metric-label">Lingua</span>
+            <strong id="detectedLanguage">—</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Indicatore IA</span>
+            <strong id="aiScore">—</strong>
+            <div class="meter"><span id="aiMeter"></span></div>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Compatibilità stile</span>
+            <strong id="styleScore">—</strong>
+            <div class="meter"><span id="styleMeter"></span></div>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Livello inglese</span>
+            <strong id="cefrScore">—</strong>
+          </article>
+        </div>
+
+        <div class="grid two">
+          <section class="card">
+            <h3>Indicatori rilevati</h3>
+            <div id="signalsList" class="signal-list"></div>
+          </section>
+          <section class="card">
+            <h3>Valutazione didattica</h3>
+            <div id="gradingBox"></div>
+          </section>
+        </div>
+
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <h3>Passaggi da verificare</h3>
+              <p class="muted small">Evidenziati perché presentano caratteristiche linguistiche poco variabili, molto formali o atipiche.</p>
+            </div>
+          </div>
+          <div id="highlightedText" class="highlighted"></div>
+        </section>
+
+        <div class="grid two">
+          <section class="card">
+            <h3>Correzioni e osservazioni</h3>
+            <div id="correctionsList"></div>
+          </section>
+          <section class="card">
+            <h3>Domande per la verifica orale</h3>
+            <ol id="questionsList" class="questions"></ol>
+          </section>
+        </div>
+
+        <section class="card">
+          <h3>Statistiche del testo</h3>
+          <div id="statsTable" class="stats-table"></div>
+        </section>
+
+        <section class="card">
+          <div class="section-head">
+            <div>
+              <h3>Report</h3>
+              <p class="muted small">Esporta un riepilogo da conservare nella correzione.</p>
+            </div>
+            <button id="exportBtn" class="btn">Esporta TXT</button>
+          </div>
+          <textarea id="reportText" rows="12" readonly></textarea>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="studentDialog">
+    <form method="dialog" id="studentForm">
+      <h3>Nuovo studente</h3>
+      <label for="studentName">Nome o codice studente</label>
+      <input id="studentName" maxlength="60" placeholder="Es. Studente 3B - 07" required />
+      <div class="dialog-actions">
+        <button value="cancel" class="btn ghost">Annulla</button>
+        <button id="confirmStudentBtn" value="default" class="btn primary">Crea</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="referencesDialog">
+    <div>
+      <h3>Campioni salvati</h3>
+      <div id="referencesList"></div>
+      <div class="dialog-actions">
+        <button id="closeReferencesBtn" class="btn primary">Chiudi</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+  <script type="module">
+    import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs";
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs";
+    window.pdfjsLib = pdfjsLib;
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>
